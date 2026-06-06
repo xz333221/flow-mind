@@ -5,6 +5,9 @@ export interface NodeDragOptions {
   scale: Ref<number>
   getNodeById: (id: string) => LayoutNode | undefined
   collectDescendants: (id: string) => string[]
+  /** Called once on mousedown (with the pre-drag offset map) and
+   *  once on mouseup (with the post-drag offset map).  The caller
+   *  can use this to push history snapshots so drag is undoable. */
   onChange?: () => void
 }
 
@@ -43,6 +46,8 @@ export function useNodeDrag(opts: NodeDragOptions) {
     dragDelta.value = { x: 0, y: 0 }
     window.addEventListener('mousemove', onNodeDragMove)
     window.addEventListener('mouseup', onNodeDragEnd)
+    // Snapshot the pre-drag state so a subsequent undo can restore it.
+    opts.onChange?.()
   }
 
   function onNodeDragMove(e: MouseEvent) {
@@ -80,11 +85,30 @@ export function useNodeDrag(opts: NodeDragOptions) {
     nodeOffsets.clear()
   }
 
+  /** Bulk-load offsets from a snapshot — used by history.undo() to
+   *  restore the offset map the user had before a drag. */
+  function setOffsets(offsets: Map<string, { x: number; y: number }> | Record<string, { x: number; y: number }>) {
+    nodeOffsets.clear()
+    if (offsets instanceof Map) {
+      for (const [k, v] of offsets) nodeOffsets.set(k, v)
+    } else {
+      for (const k in offsets) nodeOffsets.set(k, offsets[k])
+    }
+  }
+
+  function getOffsets(): Record<string, { x: number; y: number }> {
+    const out: Record<string, { x: number; y: number }> = {}
+    for (const [k, v] of nodeOffsets) out[k] = { x: v.x, y: v.y }
+    return out
+  }
+
   return {
     draggingNodeId,
     dragDelta,
     nodeOffsets,
     getOffset,
+    getOffsets,
+    setOffsets,
     nodePos,
     startNodeDrag,
     resetOffsets,
