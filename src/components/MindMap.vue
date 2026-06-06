@@ -602,6 +602,12 @@ function onCanvasClick(e: MouseEvent) {
   if (!target) return
   // Ignore clicks that land on a node or its control buttons.
   if (target.closest('.zm-node')) return
+  // If a marquee just finished (drag was wide enough to count as
+  // a real selection gesture), keep whatever the marquee picked.
+  // Only treat a *tiny* marquee — i.e. a click with no real drag —
+  // as a deselect.
+  const m = panZoom.marquee
+  if (m.width >= 4 || m.height >= 4) return
   if (selectedId.value !== null) {
     selectedId.value = null
     emit('select', null)
@@ -625,10 +631,17 @@ function onMarqueeEnd() {
   for (const n of allNodes.value) {
     const halfW = n.width / 2
     const halfH = n.height / 2
-    // Quick AABB intersect in world coords.
-    if (n.x + halfW >= x1 && n.x - halfW <= x2 && n.y + halfH >= y1 && n.y - halfH <= y2) {
-      hit.push(n.id)
-    }
+    // AABB intersect: a node is hit if its bbox overlaps the
+    // marquee in BOTH axes.  Standard AABB intersection check, so
+    // partially-encroached nodes (the common case) are also
+    // selected.
+    const nLeft = n.x - halfW
+    const nRight = n.x + halfW
+    const nTop = n.y - halfH
+    const nBottom = n.y + halfH
+    const overlaps =
+      nLeft <= x2 && nRight >= x1 && nTop <= y2 && nBottom >= y1
+    if (overlaps) hit.push(n.id)
   }
   if (hit.length > 0) {
     // Pick the first hit as the primary selection; downstream code
@@ -1025,6 +1038,7 @@ watch(
           v-for="n in allNodes"
           :key="n.id"
           class="zm-node"
+          :data-node-id="n.id"
           :class="{
             'is-root': n.isRoot,
             'is-selected': selectedId === n.id,
