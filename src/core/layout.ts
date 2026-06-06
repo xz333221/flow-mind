@@ -6,6 +6,9 @@ export interface LayoutNode {
   y: number
   width: number
   height: number
+  /** Font size to render this node's text at, in px. Driven by depth so
+   *  the root reads as the title and deeper nodes shrink to a min. */
+  fontSize: number
   isRoot: boolean
   collapsed?: boolean
   side: 1 | -1
@@ -15,8 +18,27 @@ export interface LayoutNode {
 
 import type { MindMapNode } from '../types'
 
-const NODE_W = 140
-const NODE_H = 36
+// Depth-tiered node metrics — root reads as the title, branches step down,
+// everything past `MAX_TIER` clamps to the smallest size (xmind style).
+// Indices: 0 = root, 1 = top branch, 2 = sub-branch, 3+ = leaf tier.
+const NODE_WIDTHS = [180, 140, 120, 110]
+const NODE_HEIGHTS = [44, 36, 30, 28]
+const NODE_FONTS = [18, 14, 13, 12]
+const MAX_TIER = NODE_WIDTHS.length - 1
+
+function tierFor(depth: number) {
+  return Math.min(MAX_TIER, Math.max(0, depth))
+}
+function widthAt(depth: number) {
+  return NODE_WIDTHS[tierFor(depth)]
+}
+function heightAt(depth: number) {
+  return NODE_HEIGHTS[tierFor(depth)]
+}
+function fontAt(depth: number) {
+  return NODE_FONTS[tierFor(depth)]
+}
+
 const H_GAP = 60
 const V_GAP = 14
 const SIDE_PADDING = 24
@@ -49,8 +71,8 @@ export function layout(
   const subH = new Map<LayoutNode, number>()
   function computeSubH(n: LayoutNode): number {
     if (n.collapsed || n.children.length === 0) {
-      subH.set(n, NODE_H)
-      return NODE_H
+      subH.set(n, n.height)
+      return n.height
     }
     let total = 0
     for (const c of n.children) total += computeSubH(c)
@@ -63,17 +85,18 @@ export function layout(
   // sum of a set of children's subtree heights + the V_GAPs between them
   function naturalH(children: LayoutNode[]): number {
     let total = 0
-    for (const c of children) total += subH.get(c) ?? NODE_H
+    for (const c of children) total += subH.get(c) ?? c.height
     if (children.length > 1) total += V_GAP * (children.length - 1)
     return total
   }
 
-  // x positions
-  function assignX(n: LayoutNode, px: number) {
-    n.x = n.isRoot ? 0 : px + n.side * (NODE_W + H_GAP)
-    for (const c of n.children) assignX(c, n.x)
+  // x positions — center-to-center distance is parent_half + gap + child_half,
+  // so tiers of different widths line up cleanly along each column.
+  function assignX(n: LayoutNode, px: number, pw: number) {
+    n.x = n.isRoot ? 0 : px + n.side * (pw / 2 + H_GAP + n.width / 2)
+    for (const c of n.children) assignX(c, n.x, n.width)
   }
-  assignX(lr, 0)
+  assignX(lr, 0, lr.width)
 
   // Compute band height for each parent: the height that ALL of its
   // siblings (i.e. other children of its parent) try to reach, so that
@@ -109,7 +132,7 @@ export function layout(
     let sibMax = 0
     for (const s of sib) {
       if (s.side !== p.side) continue
-      const h = subH.get(s) ?? NODE_H
+      const h = subH.get(s) ?? s.height
       if (h > sibMax) sibMax = h
     }
     return Math.max(myNat, sibMax)
@@ -131,7 +154,7 @@ export function layout(
       const placed: { y0: number; y1: number }[] = []
       for (let i = 0; i < children.length; i++) {
         const c = children[i]
-        const h = subH.get(c) ?? NODE_H
+        const h = subH.get(c) ?? c.height
         // smallest y we can place this child at, given prior siblings
         let yi = y
         for (const p of placed) {
@@ -165,9 +188,11 @@ export function layout(
       for (let i = 1; i < children.length; i++) {
         const prev = children[i - 1]
         const cur = children[i]
-        const prevY0 = prev.y - (subH.get(prev) ?? NODE_H) / 2
-        const prevY1 = prev.y + (subH.get(prev) ?? NODE_H) / 2
-        const curY0 = cur.y - (subH.get(cur) ?? NODE_H) / 2
+        const prevH = subH.get(prev) ?? prev.height
+        const curH = subH.get(cur) ?? cur.height
+        const prevY0 = prev.y - prevH / 2
+        const prevY1 = prev.y + prevH / 2
+        const curY0 = cur.y - curH / 2
         const neededY1 = prevY1 + V_GAP
         if (curY0 < neededY1) {
           const shift = neededY1 - curY0
@@ -238,20 +263,26 @@ export function layout(
     lr.y = nat / 2
   }
 
-  // compute bounds
+  // Walk every node and find the actual bbox in world space, accounting
+  // for each node's own (depth-tiered) width and height.
   const stack: LayoutNode[] = [lr]
   let minY = Infinity,
     maxY = -Infinity,
-    maxX = 0
+    leftX = 0,
+    rightX = 0,
+    rootH = lr.height
   while (stack.length) {
     const cur = stack.pop()!
-    minY = Math.min(minY, cur.y)
-    maxY = Math.max(maxY, cur.y)
-    maxX = Math.max(maxX, Math.abs(cur.x))
+    const halfW = cur.width / 2
+    const halfH = cur.height / 2
+    if (cur.y - halfH < minY) minY = cur.y - halfH
+    if (cur.y + halfH > maxY) maxY = cur.y + halfH
+    if (cur.x - halfW < -leftX) leftX = -(cur.x - halfW)
+    if (cur.x + halfW > rightX) rightX = cur.x + halfW
     stack.push(...cur.children)
   }
-  // shift y so top of layout = NODE_H/2 + PAD
-  const topPad = NODE_H / 2 + SIDE_PADDING
+  // shift y so top of layout = SIDE_PADDING
+  const topPad = SIDE_PADDING
   const yShift = topPad - minY
   const s2: LayoutNode[] = [lr]
   while (s2.length) {
@@ -261,10 +292,11 @@ export function layout(
   }
   minY += yShift
   maxY += yShift
-  const vbX = -maxX - NODE_W / 2 - SIDE_PADDING
-  const vbY = -SIDE_PADDING
-  const vbW = (maxX + NODE_W / 2) * 2 + SIDE_PADDING * 2
-  const vbH = maxY + NODE_H / 2 + SIDE_PADDING
+  void rootH
+  const vbX = -leftX - SIDE_PADDING
+  const vbY = 0
+  const vbW = leftX + rightX + SIDE_PADDING * 2
+  const vbH = maxY + SIDE_PADDING
   return {
     root: lr,
     width: vbW,
@@ -288,8 +320,9 @@ function buildLayout(
     depth,
     x: 0,
     y: 0,
-    width: NODE_W,
-    height: NODE_H,
+    width: widthAt(depth),
+    height: heightAt(depth),
+    fontSize: fontAt(depth),
     isRoot: depth === 0,
     collapsed: node.collapsed,
     side,
@@ -325,4 +358,18 @@ function buildLayout(
   return ln
 }
 
-export const LAYOUT = { NODE_W, NODE_H, H_GAP, V_GAP, SIDE_PADDING }
+export const LAYOUT = {
+  // Legacy single-size values are kept as the *branch tier* (depth 1) so
+  // existing callers (mostly tests) keep working.
+  NODE_W: NODE_WIDTHS[1],
+  NODE_H: NODE_HEIGHTS[1],
+  NODE_WIDTHS,
+  NODE_HEIGHTS,
+  NODE_FONTS,
+  H_GAP,
+  V_GAP,
+  SIDE_PADDING,
+  widthAt,
+  heightAt,
+  fontAt,
+}

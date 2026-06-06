@@ -45,8 +45,8 @@ const initialData: MindMapNode = {
 const data = ref<MindMapNode>(initialData)
 const selectedNode = ref<MindMapNode | null>(null)
 const collapsedIds = ref<Set<string>>(new Set())
-const showOutline = ref(true)
-const showData = ref(true)
+const showOutline = ref(false)
+const showData = ref(false)
 const showSettings = ref(false)
 const mindMapRef = ref<InstanceType<typeof MindMap> | null>(null)
 

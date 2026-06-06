@@ -172,7 +172,12 @@ if (!coreNodeBalanced || coreNodeBalanced.x > 900) {
 }
 console.log(`balance restored 核心功能 to x=${coreNodeBalanced.x}`)
 
-// App layout: outline + data drawers should both be present
+// App layout: drawers are closed by default — open them, then assert
+// their content renders.
+await page.locator('.zm-app-icon-btn[title="显示大纲"]').click()
+await page.waitForTimeout(250)
+await page.locator('.zm-app-icon-btn[title="显示数据"]').click()
+await page.waitForTimeout(250)
 const outlineRows = await page.locator('.zm-outline-row').count()
 const dataPre = await page.locator('.zm-data-pre').count()
 console.log(`outline rows: ${outlineRows}, data panels: ${dataPre}`)
@@ -209,8 +214,8 @@ if (!download.suggestedFilename().endsWith('.json')) {
   process.exit(1)
 }
 
-// close a drawer and re-open it via the toolbar button
-await page.locator('.zm-drawer .zm-drawer-close').first().click()
+// close the outline drawer and re-open it via the toolbar button
+await page.locator('.zm-drawer--left .zm-drawer-close').click()
 await page.waitForTimeout(300)
 const outlineAfterClose = await page.locator('.zm-outline-row').count()
 if (outlineAfterClose !== 0) {

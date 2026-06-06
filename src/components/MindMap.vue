@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, nextTick, onMounted } from 'vue'
 import Icon from './Icon.vue'
-import { layout, LAYOUT, type LayoutNode } from '../core/layout'
+import { layout, type LayoutNode } from '../core/layout'
 import {
   addChild,
   addSibling,
@@ -603,12 +603,25 @@ function taperedSegments(
 function lineAnchor(
   n: LayoutNode,
   side: 'in' | 'out',
-  dir?: 1 | -1
+  dir?: 1 | -1,
+  toY?: number
 ): { x: number; y: number } {
   const p = nodeDrag.nodePos(n)
-  // Both 'in' and 'out' anchor at the node's own y so the line lands
-  // precisely on the node's side mid-point. The bezier control points do
-  // the smoothing (xmind-style).
+  // For the root, fan the outgoing lines out from the node's side edge
+  // along its height — each line starts at the y of its target child
+  // (clamped to the root's vertical extent). This matches xmind's
+  // "spread" look instead of bundling every line through the root center.
+  if (n.isRoot && side === 'out') {
+    const d = (dir ?? 1) as 1 | -1
+    const half = n.height / 2
+    const top = p.y - half
+    const bot = p.y + half
+    const y = toY === undefined ? p.y : Math.max(top, Math.min(bot, toY))
+    return { x: p.x + d * (n.width / 2), y }
+  }
+  // Both 'in' and (non-root) 'out' anchor at the node's own y so the line
+  // lands precisely on the node's side mid-point. The bezier control points
+  // do the smoothing (xmind-style).
   const y = p.y
   if (n.isRoot) {
     const d = (dir ?? 1) as 1 | -1
@@ -797,7 +810,7 @@ watch(
           <g class="zm-edges">
             <template v-for="e in edges" :key="e.key">
               <path
-                v-for="(seg, i) in taperedSegments(lineAnchor(e.from, 'out', e.to.side), lineAnchor(e.to, 'in'), settings.lineWidthStart, settings.lineWidthEnd)"
+                v-for="(seg, i) in taperedSegments(lineAnchor(e.from, 'out', e.to.side, nodeDrag.nodePos(e.to).y), lineAnchor(e.to, 'in'), settings.lineWidthStart, settings.lineWidthEnd)"
                 :key="e.key + '-s' + i"
                 :d="seg.d"
                 fill="none"
@@ -819,9 +832,10 @@ watch(
           }"
           :style="{
             left: nodeDrag.nodePos(n).x - n.width / 2 + 'px',
-            top: nodeDrag.nodePos(n).y - LAYOUT.NODE_H / 2 + 'px',
+            top: nodeDrag.nodePos(n).y - n.height / 2 + 'px',
             minWidth: n.width + 'px',
-            height: LAYOUT.NODE_H + 'px',
+            height: n.height + 'px',
+            fontSize: n.fontSize + 'px',
             background: nodeBg(n),
             color: nodeFg(n),
             borderColor: nodeBorder(n),
@@ -968,11 +982,10 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 28px;
+  padding: 0 1.6em;
   box-sizing: border-box;
   border-radius: 8px;
   border: 1px solid;
-  font-size: 0.9em;
   line-height: 1.2;
   cursor: move;
   transition: box-shadow 0.15s, transform 0.05s;
@@ -986,7 +999,6 @@ watch(
 }
 .zm-node.is-root {
   font-weight: 600;
-  font-size: 1em;
 }
 .zm-node.is-selected {
   outline: 2px solid #3b82f6;
