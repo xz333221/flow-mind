@@ -125,8 +125,8 @@ const theme = computed<Required<MindMapTheme>>(() => ({
 // ---------------------------------------------------------------------------
 const settings = reactive<MindMapSettings>({
   autoBalanceOnChange: false,
-  lineWidthStart: 4.0,
-  lineWidthEnd: 0.6,
+  lineWidthStart: 3.5,
+  lineWidthEnd: 0.8,
   rainbowBranch: true,
 })
 
@@ -137,8 +137,8 @@ const lrRootChildren = computed<LayoutNode[]>(() => layoutResult.value.root.chil
 // half-height and grows with how far the side's children stretch
 // vertically — so a side with 5+ scattered branches fans out
 // properly instead of bundling at the corners. x is the root's
-// side edge with a tiny outward offset (2px) so each path starts
-// visually attached to the root, not buried under it.
+// side edge exactly (no outward offset) so the path's parent end
+// visually starts on the root surface, not floating outside it.
 const rootEdgeAnchor = computed<Map<string, { x: number; y: number }>>(() => {
   const m = new Map<string, { x: number; y: number }>()
   const root = layoutResult.value.root
@@ -155,7 +155,7 @@ const rootEdgeAnchor = computed<Map<string, { x: number; y: number }>>(() => {
       .sort((a, b) => nodeDrag.nodePos(a).y - nodeDrag.nodePos(b).y)
     const n = sideKids.length
     if (n === 0) continue
-    const x = pos.x + side * halfW + side * 2
+    const x = pos.x + side * halfW
     if (n === 1) {
       m.set(sideKids[0].id, { x, y: pos.y })
       continue

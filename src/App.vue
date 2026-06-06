@@ -84,8 +84,8 @@ function syncHashData() {
 // MindMap's own defaults so the UI is consistent.
 const settings = reactive<MindMapSettings>({
   autoBalanceOnChange: false,
-  lineWidthStart: 4.0,
-  lineWidthEnd: 0.6,
+  lineWidthStart: 3.5,
+  lineWidthEnd: 0.8,
   rainbowBranch: true,
 })
 
@@ -102,8 +102,8 @@ function onNodeStyleChange(style: { bg?: string; textColor?: string; borderColor
 function resetSettings() {
   const defaults: MindMapSettings = {
     autoBalanceOnChange: false,
-    lineWidthStart: 4.0,
-    lineWidthEnd: 0.6,
+    lineWidthStart: 3.5,
+    lineWidthEnd: 0.8,
     rainbowBranch: true,
   }
   Object.assign(settings, defaults)
