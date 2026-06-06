@@ -10,7 +10,7 @@ describe('layout', () => {
     expect(r.root.isRoot).toBe(true)
   })
 
-  it('lays out children to alternating sides', () => {
+  it('lays out children per demo/1.html mindmap split: first ceil(n/2) right, rest left', () => {
     const data: MindMapNode = {
       id: 'r',
       text: 'R',
@@ -22,7 +22,8 @@ describe('layout', () => {
     }
     const r = layout(data)
     const sides = r.root.children.map((c) => c.side)
-    expect(sides).toEqual([1, -1, 1])
+    // 1.html: slice(0, ceil(3/2)) = [a, b] go right, [c] goes left.
+    expect(sides).toEqual([1, 1, -1])
   })
 
   it('places the root on x=0', () => {
@@ -121,9 +122,10 @@ describe('layout', () => {
   })
 
   describe('balanced mode', () => {
-    // 3 children — root forces i%2 sides: child[0] right, child[1] left,
-    // child[2] right.  So 2 right, 1 left.  Right side has more mass
-    // because the right children have wider subtrees.
+    // 1.html mindmap split: first ceil(n/2) = 2 children on the right,
+    // remaining 1 on the left. Right side has more mass (a=4 leaf + b=2
+    // leaf) than the left side (c=1 leaf). In balanced mode the left
+    // group should be centered inside the right group's band.
     const data: MindMapNode = {
       id: 'r',
       text: 'R',
@@ -139,20 +141,20 @@ describe('layout', () => {
             { id: 'a4', text: 'A4', children: [] },
           ],
         },
-        // child[1] — left — light subtree
+        // child[1] — right — medium subtree
         {
           id: 'b',
           text: 'B',
-          children: [{ id: 'b1', text: 'B1', children: [] }],
+          children: [
+            { id: 'b1', text: 'B1', children: [] },
+            { id: 'b2', text: 'B2', children: [] },
+          ],
         },
-        // child[2] — right — medium subtree
+        // child[2] — left — light subtree
         {
           id: 'c',
           text: 'C',
-          children: [
-            { id: 'c1', text: 'C1', children: [] },
-            { id: 'c2', text: 'C2', children: [] },
-          ],
+          children: [{ id: 'c1', text: 'C1', children: [] }],
         },
       ],
     }
@@ -166,20 +168,20 @@ describe('layout', () => {
     }
 
     it('balanced mode centers the shorter side within the band', () => {
-      // Right side has more mass (a=4 leaf + c=2 leaf), left side has less
-      // (b=1 leaf).  Balanced should center the left group inside the
+      // Right side has more mass (a=4 leaf + b=2 leaf), left side has less
+      // (c=1 leaf).  Balanced should center the left group inside the
       // max-of-sides band — i.e. the left group's y should sit *between*
       // the top and bottom of the right group, not at the top.
       const balancedR = layout(data, { balanced: true })
       const a = balancedR.root.children.find((c) => c.id === 'a')!
-      const c = balancedR.root.children.find((c) => c.id === 'c')!
       const b = balancedR.root.children.find((c) => c.id === 'b')!
+      const c = balancedR.root.children.find((c) => c.id === 'c')!
       const yMin = Math.min(a.y, b.y, c.y)
       const yMax = Math.max(a.y, b.y, c.y)
-      // b's y should be strictly inside (yMin, yMax) — i.e. it shifted
+      // c's y should be strictly inside (yMin, yMax) — i.e. it shifted
       // away from the top edge to be centered.
-      expect(b.y).toBeGreaterThan(yMin)
-      expect(b.y).toBeLessThan(yMax)
+      expect(c.y).toBeGreaterThan(yMin)
+      expect(c.y).toBeLessThan(yMax)
     })
 
     it('balanced mode keeps the larger side in its natural position', () => {
@@ -246,7 +248,7 @@ describe('layout', () => {
 
     it('band is at least as tall as the parents own children', () => {
       // 5 children all on the same side, all leaves — natural height
-      // is 5*36+4*14=236, much larger than any of the other siblings.
+      // is 5*38+4*14=246, much larger than any of the other siblings.
       // The band for this parent must accommodate its own natural
       // height so the children don't overlap each other.
       const data: MindMapNode = {
@@ -278,14 +280,13 @@ describe('layout', () => {
     })
 
     it('balanced mode centers every parent\'s children (recursive)', () => {
-      // root has 3 children: 2 right, 1 left. The right side has more mass
-      // (a=4 leaf + c=2 leaf). The LEFT group should be centered within
-      // max(leftH, rightH) so its children sit BETWEEN the top and bottom
-      // of the right group — proving the centering works for the side.
+      // root has 3 children: 2 right (a heavy, b medium), 1 left (c light).
+      // The LEFT group should be centered within max(leftH, rightH) so
+      // its child sits BETWEEN the top and bottom of the right group.
       // For a non-root parent with multiple sub-branches, the same rule
       // applies (each parents children form a centered group).
       const r = layout(data, { balanced: true })
-      // root children: a (right, top), b (left, middle), c (right, bottom)
+      // root children: a (right, top), b (right, middle), c (left, bottom)
       // a.y < b.y < c.y
       const a = r.root.children.find((c) => c.id === 'a')!
       const b = r.root.children.find((c) => c.id === 'b')!
