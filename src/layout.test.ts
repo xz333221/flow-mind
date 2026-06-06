@@ -10,7 +10,7 @@ describe('layout', () => {
     expect(r.root.isRoot).toBe(true)
   })
 
-  it('lays out children to alternating sides', () => {
+  it('lays out children per demo/1.html mindmap split: first ceil(n/2) right, rest left', () => {
     const data: MindMapNode = {
       id: 'r',
       text: 'R',
@@ -22,7 +22,8 @@ describe('layout', () => {
     }
     const r = layout(data)
     const sides = r.root.children.map((c) => c.side)
-    expect(sides).toEqual([1, -1, 1])
+    // 1.html: slice(0, ceil(3/2)) = [a, b] go right, [c] goes left.
+    expect(sides).toEqual([1, 1, -1])
   })
 
   it('places the root on x=0', () => {
@@ -31,7 +32,7 @@ describe('layout', () => {
     expect(r.root.x).toBe(0)
   })
 
-  it('positions children to the right or left of the root', () => {
+  it('positions children per 1.html mindmap split: first child right, second left (ceil(2/2)=1)', () => {
     const data: MindMapNode = {
       id: 'r',
       text: 'R',
@@ -43,6 +44,7 @@ describe('layout', () => {
     const r = layout(data)
     const a = r.root.children.find((c) => c.id === 'a')!
     const b = r.root.children.find((c) => c.id === 'b')!
+    // 1.html: ceil(2/2)=1 → first child (a) is right, rest (b) is left.
     expect(a.x).toBeGreaterThan(0)
     expect(b.x).toBeLessThan(0)
   })
@@ -120,184 +122,89 @@ describe('layout', () => {
     expect(r.root.children[0].children[0].parent?.id).toBe('a')
   })
 
-  describe('balanced mode', () => {
-    // 3 children — root forces i%2 sides: child[0] right, child[1] left,
-    // child[2] right.  So 2 right, 1 left.  Right side has more mass
-    // because the right children have wider subtrees.
+  // ----------------------------------------------------------------
+  // 1.html parity tests — verify the *specific* 1.html behaviors the
+  // previous (reverted) alignment commit missed.  The classic case:
+  // a single-child parent's child must share the parent's y
+  // (cy = node.y - totalH/2 puts the centered single child at the
+  // same y as its parent).  1.html also tags each node with `_dir`
+  // so the connection layer can pick the right bezier orientation.
+  // ----------------------------------------------------------------
+  it('1.html: single-child parent → child sits at parent y (cy=centered)', () => {
+    // Mindmap with one child per side: a, then b.  ceil(2/2)=1, so
+    // children[0]='a' is on the right, children[1]='b' is on the left.
+    // Each side has a single child — pre-fix, that lone child was
+    // placed at y = ownH/2 (off the parent's y).  1.html's centered
+    // cy formula puts both children AT the parent's y.
+    const data: MindMapNode = {
+      id: 'r',
+      text: 'Root',
+      children: [
+        { id: 'a', text: 'a', children: [] },
+        { id: 'b', text: 'b', children: [] },
+      ],
+    }
+    const r = layout(data)
+    const a = r.root.children.find((c) => c.id === 'a')!
+    const b = r.root.children.find((c) => c.id === 'b')!
+    expect(a.x).toBeGreaterThan(0)
+    expect(b.x).toBeLessThan(0)
+    expect(a.y).toBeCloseTo(r.root.y, 1)
+    expect(b.y).toBeCloseTo(r.root.y, 1)
+  })
+
+  it('1.html: every node carries a _dir hint for edge anchoring', () => {
+    // 2 children: ceil(2/2)=1 → children[0]='a' is right, children[1]='b' is left.
     const data: MindMapNode = {
       id: 'r',
       text: 'R',
       children: [
-        // child[0] — right — heavy subtree
-        {
-          id: 'a',
-          text: 'A',
-          children: [
-            { id: 'a1', text: 'A1', children: [] },
-            { id: 'a2', text: 'A2', children: [] },
-            { id: 'a3', text: 'A3', children: [] },
-            { id: 'a4', text: 'A4', children: [] },
-          ],
-        },
-        // child[1] — left — light subtree
-        {
-          id: 'b',
-          text: 'B',
-          children: [{ id: 'b1', text: 'B1', children: [] }],
-        },
-        // child[2] — right — medium subtree
-        {
-          id: 'c',
-          text: 'C',
-          children: [
-            { id: 'c1', text: 'C1', children: [] },
-            { id: 'c2', text: 'C2', children: [] },
-          ],
-        },
+        { id: 'a', text: 'A', children: [
+          { id: 'a1', text: 'A1', children: [] }
+        ] },
+        { id: 'b', text: 'B', children: [] },
       ],
     }
+    const r = layout(data)
+    const a = r.root.children.find((c) => c.id === 'a')!
+    const b = r.root.children.find((c) => c.id === 'b')!
+    const a1 = a.children[0]
+    expect(a._dir).toBe('right')
+    expect(b._dir).toBe('left')
+    expect(a1._dir).toBe('right') // inherits parent's dir
+  })
 
-    function sideExtent(r: ReturnType<typeof layout>, side: 1 | -1) {
-      const arr = r.root.children.filter((c) => c.side === side)
-      if (arr.length === 0) return 0
-      const ys = arr.map((c) => c.y).sort((x, y) => x - y)
-      // extent: from top of first child to bottom of last child
-      return ys[ys.length - 1] - ys[0] + LAYOUT.NODE_H
+  it('1.html: tree mode fans all root children to the right', () => {
+    const data: MindMapNode = {
+      id: 'r',
+      text: 'R',
+      children: [
+        { id: 'a', text: 'A', children: [] },
+        { id: 'b', text: 'B', children: [] },
+        { id: 'c', text: 'C', children: [] },
+      ],
     }
+    const r = layout(data, { mode: 'tree' })
+    for (const c of r.root.children) {
+      expect(c.x).toBeGreaterThan(0)
+      expect(c._dir).toBe('right')
+    }
+  })
 
-    it('balanced mode centers the shorter side within the band', () => {
-      // Right side has more mass (a=4 leaf + c=2 leaf), left side has less
-      // (b=1 leaf).  Balanced should center the left group inside the
-      // max-of-sides band — i.e. the left group's y should sit *between*
-      // the top and bottom of the right group, not at the top.
-      const balancedR = layout(data, { balanced: true })
-      const a = balancedR.root.children.find((c) => c.id === 'a')!
-      const c = balancedR.root.children.find((c) => c.id === 'c')!
-      const b = balancedR.root.children.find((c) => c.id === 'b')!
-      const yMin = Math.min(a.y, b.y, c.y)
-      const yMax = Math.max(a.y, b.y, c.y)
-      // b's y should be strictly inside (yMin, yMax) — i.e. it shifted
-      // away from the top edge to be centered.
-      expect(b.y).toBeGreaterThan(yMin)
-      expect(b.y).toBeLessThan(yMax)
-    })
-
-    it('balanced mode keeps the larger side in its natural position', () => {
-      const compact = layout(data)
-      const balancedR = layout(data, { balanced: true })
-      // 'a' is the top child on the right (larger side).  It is already
-      // top-aligned in compact mode and should remain there in balanced.
-      const compactA = compact.root.children.find((c) => c.id === 'a')!
-      const balancedA = balancedR.root.children.find((c) => c.id === 'a')!
-      expect(balancedA.y).toBeCloseTo(compactA.y, 5)
-    })
-
-    it('balanced mode keeps siblings at least NODE_H apart', () => {
-      const r = layout(data, { balanced: true })
-      const ys = r.root.children.map((c) => c.y).sort((x, y) => x - y)
-      for (let i = 1; i < ys.length; i++) {
-        expect(ys[i] - ys[i - 1]).toBeGreaterThanOrEqual(LAYOUT.NODE_H - 0.01)
-      }
-    })
-
-    it('does not break with a single child', () => {
-      const single: MindMapNode = {
-        id: 'r',
-        text: 'R',
-        children: [{ id: 'a', text: 'A', children: [] }],
-      }
-      const r = layout(single, { balanced: true })
-      expect(r.root.children.length).toBe(1)
-    })
-
-    it('non-balanced mode leaves compact spacing unchanged', () => {
-      // Force a non-trivial layout; default options should match the same call
-      const a = layout(data)
-      const b = layout(data, { balanced: false })
-      expect(a.height).toBe(b.height)
-    })
-
-    it('no two siblings overlap vertically (contour check)', () => {
-      // build an asymmetric tree that would normally cause overlap
-      const data: MindMapNode = {
-        id: 'r',
-        text: 'R',
-        children: [
-          { id: 'a', text: 'A', children: [] },
-          { id: 'b', text: 'B', children: [] },
-          { id: 'c', text: 'C', children: [] },
-          { id: 'd', text: 'D', children: [] },
-          { id: 'e', text: 'E', children: [] },
-        ],
-      }
-      const r = layout(data, { balanced: true })
-      // collect every leaf's vertical extent (a node is its own y, ±NODE_H/2)
-      const ys: number[] = []
-      const walk = (n: LayoutNode) => {
-        ys.push(n.y - LAYOUT.NODE_H / 2)
-        ys.push(n.y + LAYOUT.NODE_H / 2)
-        for (const c of n.children) walk(c)
-      }
-      walk(r.root)
-      // sanity: the tree is not insanely tall
-      const span = Math.max(...ys) - Math.min(...ys)
-      expect(span).toBeLessThan(1000)
-    })
-
-    it('band is at least as tall as the parents own children', () => {
-      // 5 children all on the same side, all leaves — natural height
-      // is 5*36+4*14=236, much larger than any of the other siblings.
-      // The band for this parent must accommodate its own natural
-      // height so the children don't overlap each other.
-      const data: MindMapNode = {
-        id: 'r',
-        text: 'R',
-        children: [
-          { id: 'a', text: 'A', children: [] },
-          {
-            id: 'b',
-            text: 'B',
-            children: [
-              { id: 'b1', text: 'B1', children: [] },
-              { id: 'b2', text: 'B2', children: [] },
-              { id: 'b3', text: 'B3', children: [] },
-              { id: 'b4', text: 'B4', children: [] },
-              { id: 'b5', text: 'B5', children: [] },
-            ],
-          },
-        ],
-      }
-      const r = layout(data, { balanced: true })
-      const b = r.root.children.find((c) => c.id === 'b')!
-      // the 5 b-children must not overlap: each pair of consecutive
-      // siblings must have at least NODE_H/2 + V_GAP between centers
-      const kids = b.children.slice().sort((x, y) => x.y - y.y)
-      for (let i = 1; i < kids.length; i++) {
-        expect(kids[i].y - kids[i - 1].y).toBeGreaterThanOrEqual(LAYOUT.NODE_H)
-      }
-    })
-
-    it('balanced mode centers every parent\'s children (recursive)', () => {
-      // root has 3 children: 2 right, 1 left. The right side has more mass
-      // (a=4 leaf + c=2 leaf). The LEFT group should be centered within
-      // max(leftH, rightH) so its children sit BETWEEN the top and bottom
-      // of the right group — proving the centering works for the side.
-      // For a non-root parent with multiple sub-branches, the same rule
-      // applies (each parents children form a centered group).
-      const r = layout(data, { balanced: true })
-      // root children: a (right, top), b (left, middle), c (right, bottom)
-      // a.y < b.y < c.y
-      const a = r.root.children.find((c) => c.id === 'a')!
-      const b = r.root.children.find((c) => c.id === 'b')!
-      const c = r.root.children.find((c) => c.id === 'c')!
-      expect(a.y).toBeLessThan(b.y)
-      expect(b.y).toBeLessThan(c.y)
-      // a1..a4 are 'a' children — they should sit around a's y, with a1
-      // above and a4 below
-      const aYs = a.children.map((cc) => cc.y).sort((x, y) => x - y)
-      expect(aYs.length).toBe(4)
-      expect(aYs[0]).toBeLessThan(a.y)
-      expect(aYs[aYs.length - 1]).toBeGreaterThan(a.y)
-    })
+  it('1.html: org mode fans all root children downward', () => {
+    const data: MindMapNode = {
+      id: 'r',
+      text: 'R',
+      children: [
+        { id: 'a', text: 'A', children: [] },
+        { id: 'b', text: 'B', children: [] },
+        { id: 'c', text: 'C', children: [] },
+      ],
+    }
+    const r = layout(data, { mode: 'org' })
+    for (const c of r.root.children) {
+      expect(c.y).toBeGreaterThan(0) // below root
+      expect(c._dir).toBe('down')
+    }
   })
 })

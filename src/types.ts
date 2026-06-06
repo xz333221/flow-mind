@@ -33,6 +33,7 @@ export interface MindMapTheme {
 }
 
 export type LineStyle = 'curve' | 'straight'
+export type LayoutMode = 'mindmap' | 'tree' | 'org'
 
 export interface MindMapSettings {
   /** When the user adds a new node or finishes a drag, automatically
@@ -47,6 +48,10 @@ export interface MindMapSettings {
   /** Edge shape between parent and child. 'curve' = fish-gill bezier
    *  (xmind default), 'straight' = direct line segment. */
   lineStyle: LineStyle
+  /** Layout mode (1.html parity).  'mindmap' = center + left/right
+   *  fans; 'tree' = single column expanding to the right; 'org' =
+   *  downward hierarchy.  Default 'mindmap'. */
+  layoutMode: LayoutMode
 }
 
 export interface NodeStyle {

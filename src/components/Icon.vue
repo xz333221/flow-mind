@@ -107,5 +107,35 @@ defineProps<{
       <polyline points="9 16 5 18 9 20" />
       <polyline points="15 16 19 18 15 20" />
     </template>
+    <!-- mindmap: center node with 4 short branches (1.html btnLayoutMindmap) -->
+    <template v-else-if="name === 'mindmap'">
+      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+      <line x1="13" y1="11" x2="19" y2="6" />
+      <line x1="13" y1="13" x2="19" y2="18" />
+      <line x1="11" y1="11" x2="5" y2="6" />
+      <line x1="11" y1="13" x2="5" y2="18" />
+    </template>
+    <!-- tree: right-angled branches (1.html btnLayoutTree) -->
+    <template v-else-if="name === 'tree'">
+      <circle cx="6" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="6" r="2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="18" r="2" fill="currentColor" stroke="none" />
+      <line x1="8" y1="12" x2="16" y2="6" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+      <line x1="8" y1="12" x2="16" y2="18" />
+    </template>
+    <!-- org: top-down hierarchy (1.html btnLayoutOrg) -->
+    <template v-else-if="name === 'org'">
+      <circle cx="12" cy="5" r="2" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="19" r="2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="19" r="2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="19" r="2" fill="currentColor" stroke="none" />
+      <line x1="12" y1="7" x2="12" y2="13" />
+      <line x1="6" y1="13" x2="18" y2="13" />
+      <line x1="6" y1="13" x2="6" y2="17" />
+      <line x1="12" y1="13" x2="12" y2="17" />
+      <line x1="18" y1="13" x2="18" y2="17" />
+    </template>
   </svg>
 </template>

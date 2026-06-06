@@ -129,6 +129,7 @@ const settings = reactive<MindMapSettings>({
   lineWidthEnd: 0.6,
   rainbowBranch: true,
   lineStyle: 'curve',
+  layoutMode: 'mindmap',
 })
 
 // Stroke width by source-node depth.  Each ribbon takes its
@@ -150,64 +151,8 @@ function endWidthForDepth(depth: number): number {
 }
 
 const lrRootChildren = computed<LayoutNode[]>(() => layoutResult.value.root.children)
-
-// Per-side anchor positions on the root. Project the root's
-// center through each child and snap to the root rectangle
-// edge — the ray from (root.x, root.y) to (child.x, child.y)
-// intersects the root's left/right/top/bottom edge at the
-// anchor. This is the "fan" geometry xmind uses: the anchor
-// always sits exactly on the root rectangle's surface, but its
-// position on the rectangle is determined by the child's
-// direction. Children below the root anchor on the bottom
-// edge, children on the left anchor on the left edge, etc.
-const rootEdgeAnchor = computed<Map<string, { x: number; y: number }>>(() => {
-  const m = new Map<string, { x: number; y: number }>()
-  const root = layoutResult.value.root
-  const pos = nodeDrag.nodePos(root)
-  const halfW = root.width / 2
-  const halfH = root.height / 2
-  // Inset the top / bottom edges by half the parent stroke width
-  // plus a small corner pad so the ribbon's center-line can sit AT
-  // the edge while the ribbon's two outer boundaries (offset by
-  // ±halfW along the normal) still clear the rectangle. The side
-  // edges don't need this — their normal is horizontal, so the
-  // ribbon extends left / right, not out of the box.
-  const cornerPad = 1
-  const strokePad = settings.lineWidthStart / 2
-  const left = pos.x - halfW
-  const right = pos.x + halfW
-  const top = pos.y - halfH + cornerPad + strokePad
-  const bot = pos.y + halfH - cornerPad - strokePad
-  for (const c of root.children) {
-    const tx = nodeDrag.nodePos(c).x
-    const ty = nodeDrag.nodePos(c).y
-    const dx = tx - pos.x
-    const dy = ty - pos.y
-    // Time parameter t > 0 at which the ray (pos + t*dir) hits
-    // each of the four edges. Take the smallest positive t to
-    // get the nearest intersection.
-    const tCandidates: number[] = []
-    if (dx !== 0) {
-      const tL = (left - pos.x) / dx
-      const tR = (right - pos.x) / dx
-      if (tL > 0) tCandidates.push(tL)
-      if (tR > 0) tCandidates.push(tR)
-    }
-    if (dy !== 0) {
-      const tT = (top - pos.y) / dy
-      const tB = (bot - pos.y) / dy
-      if (tT > 0) tCandidates.push(tT)
-      if (tB > 0) tCandidates.push(tB)
-    }
-    if (tCandidates.length === 0) {
-      m.set(c.id, { x: pos.x + c.side * halfW, y: pos.y })
-      continue
-    }
-    const t = Math.min(...tCandidates)
-    m.set(c.id, { x: pos.x + dx * t, y: pos.y + dy * t })
-  }
-  return m
-})
+// (intentionally no rootEdgeAnchor — 1.html uses simple rect-edge
+// midpoints.  The fan geometry is in the bezier control points.)
 
 const RAINBOW = [
   '#f87171', '#fb923c', '#fbbf24', '#a3e635',
@@ -360,7 +305,7 @@ useKeyboard({
 const layoutResult = computed(() => {
   const data = clone(dataRef.value)
   applyCollapse(data)
-  const r = layout(data, { balanced: balanced.value })
+  const r = layout(data, { mode: settings.layoutMode })
   return r
 })
 
@@ -679,134 +624,40 @@ function nodeHasChildren(n: LayoutNode) {
   return !!data && data.children.length > 0
 }
 
+// =====================================================================
+// Bezier path — 1.html JS L629-644.  For horizontal children
+// (right/left), the control points sit on the parent/child y line,
+// offset on x by 45% of the gap.  For 'down' (org mode), the
+// control points sit on the parent/child x line, offset on y by
+// 45% of the gap.  This is a single stroked `<path>` (not a filled
+// tapered polygon), so the SVG layer can use stroke="..." and the
+// renderer's per-depth width scales with the world transform.
+// =====================================================================
 function bezierPath(
   from: { x: number; y: number },
-  to: { x: number; y: number }
-): string {
-  // xmind-style: control points lie along the actual line from
-  // parent to child, so the line bends along the natural
-  // direction (horizontal for left/right children, vertical for
-  // above/below children, diagonal otherwise).
-  const sx = from.x + (to.x - from.x) * 0.85
-  const sy = from.y + (to.y - from.y) * 0.85
-  const ex = to.x - (to.x - from.x) * 0.5
-  const ey = to.y - (to.y - from.y) * 0.5
-  return `M ${from.x} ${from.y} C ${sx} ${sy}, ${ex} ${ey}, ${to.x} ${to.y}`
-}
-
-/** Control points for the same bezier as bezierPath(), returned as
- *  {x1,y1,x2,y2} so the template can split the curve into N
- *  segments for the tapered-stroke effect. */
-function bezierControls(
-  from: { x: number; y: number },
-  to: { x: number; y: number }
-): { x1: number; y1: number; x2: number; y2: number } {
-  // xmind-style "fish gill" curve, but the control points lie
-  // along the actual line from `from` to `to` rather than just
-  // horizontally. So:
-  //   - child directly left/right of parent: control point
-  //     heads horizontally → fish-gill with long horizontal run
-  //   - child directly above/below parent: control point heads
-  //     vertically → line goes straight diagonally
-  //   - child diagonal: control point heads diagonal → smooth
-  //     gentle curve
-  // 85% on the parent side, 50% on the child side.
-  const sx = from.x + (to.x - from.x) * 0.85
-  const sy = from.y + (to.y - from.y) * 0.85
-  const ex = to.x - (to.x - from.x) * 0.5
-  const ey = to.y - (to.y - from.y) * 0.5
-  return { x1: sx, y1: sy, x2: ex, y2: ey }
-}
-
-/** Cubic Bezier point at parameter t in [0,1].  P0=P(from),
- *  P1=(x1,y1), P2=(x2,y2), P3=P(to). */
-function cubicAt(
-  t: number,
-  from: { x: number; y: number },
-  c: { x1: number; y1: number; x2: number; y2: number },
-  to: { x: number; y: number }
-) {
-  const u = 1 - t
-  const x = u * u * u * from.x + 3 * u * u * t * c.x1 + 3 * u * t * t * c.x2 + t * t * t * to.x
-  const y = u * u * u * from.y + 3 * u * u * t * c.y1 + 3 * u * t * t * c.y2 + t * t * t * to.y
-  return { x, y }
-}
-
-/** Build a single closed-fill SVG path that visually represents the
- *  cubic Bezier from `from` to `to` with a stroke width that tapers
- *  linearly from `startW` (at the parent end) to `endW` (at the child
- *  end).  Sampling at ~32 points and offsetting along the curve's
- *  normal gives a smooth filled ribbon — much cleaner than stitching
- *  N straight-line strokes, which show seams when zoomed in. */
-function variableWidthPath(
-  from: { x: number; y: number },
   to: { x: number; y: number },
-  startW: number,
-  endW: number,
-  n = 32,
-  style: 'curve' | 'straight' = 'curve'
+  dir: 'right' | 'left' | 'down'
 ): string {
-  // 'straight' draws the ribbon as a simple quad: the centerline
-  // is a single line segment, the width is the only thing that
-  // tapers from startW to endW. Cheaper to compute and reads as
-  // an angular xmind branch style.
-  // 'curve' = the classic mind-map bezier from the project's
-  // research doc AND the XMind-style demo reference. Control
-  // points sit at the parent's y and the child's y respectively,
-  // offset only on x by 50% of the gap — this gives the
-  // long horizontal "fish gill" look the rest of the industry
-  // uses.
-  if (style === 'curve') {
-    const gap = to.x - from.x
-    const off = Math.abs(gap) * 0.5
-    const sx = from.x + (gap >= 0 ? off : -off)
-    const sy = from.y
-    const ex = to.x - (gap >= 0 ? off : -off)
-    const ey = to.y
-    const c = { x1: sx, y1: sy, x2: ex, y2: ey }
-    const deriv = (t: number) => {
-      const u = 1 - t
-      const dx2 = -3 * u * u * from.x + 3 * (u * u - 2 * u * t) * c.x1 + 3 * (2 * u * t - t * t) * c.x2 + 3 * t * t * to.x
-      const dy2 = -3 * u * u * from.y + 3 * (u * u - 2 * u * t) * c.y1 + 3 * (2 * u * t - t * t) * c.y2 + 3 * t * t * to.y
-      return { dx: dx2, dy: dy2 }
-    }
-    const left: { x: number; y: number }[] = []
-    const right: { x: number; y: number }[] = []
-    for (let i = 0; i <= n; i++) {
-      const t = i / n
-      const p = i === 0 ? from : i === n ? to : cubicAt(t, from, c, to)
-      const d = deriv(t)
-      let dlen = Math.hypot(d.dx, d.dy)
-      if (dlen < 1e-6) dlen = 1
-      const nxn = -d.dy / dlen
-      const nyn = d.dx / dlen
-      const halfW = (startW + (endW - startW) * t) / 2
-      left.push({ x: p.x + nxn * halfW, y: p.y + nyn * halfW })
-      right.push({ x: p.x - nxn * halfW, y: p.y - nyn * halfW })
-    }
-    let d2 = `M ${left[0].x.toFixed(2)} ${left[0].y.toFixed(2)}`
-    for (let i = 1; i <= n; i++) d2 += ` L ${left[i].x.toFixed(2)} ${left[i].y.toFixed(2)}`
-    for (let i = n; i >= 0; i--) d2 += ` L ${right[i].x.toFixed(2)} ${right[i].y.toFixed(2)}`
-    d2 += ' Z'
-    return d2
+  if (dir === 'right' || dir === 'left') {
+    const dx = Math.abs(to.x - from.x)
+    const cpx = dx * 0.45
+    const sign = dir === 'right' ? 1 : -1
+    return `M ${from.x} ${from.y} C ${from.x + sign * cpx} ${from.y} ${to.x - sign * cpx} ${to.y} ${to.x} ${to.y}`
   }
-
-  // 'straight' fallback: a simple quad with no curve at all.
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  let len = Math.hypot(dx, dy)
-  if (len < 1e-6) len = 1
-  const nx = -dy / len
-  const ny = dx / len
-  const halfStart = startW / 2
-  const halfEnd = endW / 2
-  const a = { x: from.x + nx * halfStart, y: from.y + ny * halfStart }
-  const b = { x: from.x - nx * halfStart, y: from.y - ny * halfStart }
-  const c = { x: to.x - nx * halfEnd, y: to.y - ny * halfEnd }
-  const d = { x: to.x + nx * halfEnd, y: to.y + ny * halfEnd }
-  return `M ${a.x.toFixed(2)} ${a.y.toFixed(2)} L ${d.x.toFixed(2)} ${d.y.toFixed(2)} L ${c.x.toFixed(2)} ${c.y.toFixed(2)} L ${b.x.toFixed(2)} ${b.y.toFixed(2)} Z`
+  // 'down' — vertical control points
+  const dy = Math.abs(to.y - from.y)
+  const cpy = dy * 0.45
+  return `M ${from.x} ${from.y} C ${from.x} ${from.y + cpy} ${to.x} ${to.y - cpy} ${to.x} ${to.y}`
 }
 
+// =====================================================================
+// Edge anchor — 1.html JS L608-626.  For horizontal children (right or
+// left), the line lands on the side mid-edge of the parent and child.
+// For 'down' (org mode), it lands on the top/bottom mid-edge.  No fan
+// geometry on the root — the previous `rootEdgeAnchor` ray-cast is
+// gone; 1.html just uses the rect-edge midpoint and lets the bezier
+// control points do the smoothing.
+// =====================================================================
 function lineAnchor(
   n: LayoutNode,
   side: 'in' | 'out',
@@ -814,34 +665,18 @@ function lineAnchor(
   child?: LayoutNode
 ): { x: number; y: number } {
   const p = nodeDrag.nodePos(n)
-  // Root outgoing edges anchor on a half-ellipse around the root, so
-  // extreme branches come out near the corners and middle ones come out
-  // from the side mid-edge — this is the wide xmind-style fan.
-  if (n.isRoot && side === 'out') {
-    if (child) {
-      const a = rootEdgeAnchor.value.get(child.id)
-      if (a) return a
-    }
-    const d = (dir ?? 1) as 1 | -1
-    return { x: p.x + d * (n.width / 2), y: p.y }
+  const childDir = child?._dir ?? n._dir
+  if (childDir === 'down') {
+    // Vertical layout (org mode): line lands on top/bottom mid-edge
+    if (side === 'out') return { x: p.x, y: p.y + n.height / 2 }
+    return { x: p.x, y: p.y - n.height / 2 }
   }
-  // Both 'in' and (non-root) 'out' anchor at the node's own y so the line
-  // lands precisely on the node's side mid-point. The bezier control points
-  // do the smoothing (xmind-style).
-  const y = p.y
-  if (n.isRoot) {
-    const d = (dir ?? 1) as 1 | -1
-    return { x: p.x + d * (n.width / 2), y }
-  }
+  // Horizontal (mindmap / tree): line lands on left/right mid-edge
   let d: 1 | -1
-  if (side === 'in') {
-    // the 'in' side faces the parent, so it is the opposite of n.side
-    d = (-n.side) as 1 | -1
-  } else {
-    d = n.side
-  }
-  if (dir !== undefined) d = dir
-  return { x: p.x + d * (n.width / 2), y }
+  if (side === 'in') d = (-n.side) as 1 | -1
+  else if (dir !== undefined) d = dir
+  else d = n.side
+  return { x: p.x + d * (n.width / 2), y: p.y }
 }
 
 function resetView() {
@@ -859,6 +694,16 @@ function runBalance() {
   // 3. force a layoutVersion bump so the computed re-runs immediately
   triggerRef()
   // 4. re-center the view so the user sees the result
+  nextTick(() => resetView())
+}
+
+// 1.html-style layout mode switcher.  Changes settings.layoutMode
+// and re-runs the layout.  Triggering nextTick+resetView is the
+// same dance runBalance() does.
+function setLayoutMode(mode: 'mindmap' | 'tree' | 'org') {
+  if (settings.layoutMode === mode) return
+  settings.layoutMode = mode
+  triggerRef()
   nextTick(() => resetView())
 }
 
@@ -965,6 +810,7 @@ defineExpose<MindMapExpose>({
     lineWidthEnd: settings.lineWidthEnd,
     rainbowBranch: settings.rainbowBranch,
     lineStyle: settings.lineStyle,
+    layoutMode: settings.layoutMode,
   }),
 })
 
@@ -1024,9 +870,12 @@ watch(
             <path
               v-for="e in edges"
               :key="e.key"
-              :d="variableWidthPath(lineAnchor(e.from, 'out', e.to.side, e.to), lineAnchor(e.to, 'in'), lineWidthForDepth(e.from.depth), endWidthForDepth(e.to.depth), 32, settings.lineStyle)"
-              :fill="lineColorFor(e.from, e.to)"
-              stroke="none"
+              :d="bezierPath(lineAnchor(e.from, 'out', e.to.side, e.to), lineAnchor(e.to, 'in'), e.to._dir)"
+              :stroke="lineColorFor(e.from, e.to)"
+              :stroke-width="e.from.depth === 0 ? 2.5 : 2"
+              fill="none"
+              stroke-linecap="round"
+              opacity="0.7"
             />
           </g>
         </svg>
@@ -1064,8 +913,8 @@ watch(
             'is-editing': editingId === n.id,
           }"
           :style="{
-            left: nodeDrag.nodePos(n).x - n.width / 2 + 'px',
-            top: nodeDrag.nodePos(n).y - n.height / 2 + 'px',
+            left: nodeDrag.nodePos(n).x + 'px',
+            top: nodeDrag.nodePos(n).y + 'px',
             minWidth: n.width + 'px',
             height: n.height + 'px',
             fontSize: n.fontSize + 'px',
@@ -1073,6 +922,11 @@ watch(
             color: nodeFg(n),
             borderColor: nodeBorder(n),
             fontWeight: nodeFontWeight(n),
+            // 1.html centering trick: position the box by its center
+            // (x,y) and let the browser center it via transform.
+            // The manual drag offset is added to the -50%/-50% to
+            // keep drag working in the new coordinate system.
+            transform: `translate(calc(-50% + ${nodeDrag.getOffset(n.id).x}px), calc(-50% + ${nodeDrag.getOffset(n.id).y}px))`,
           }"
           @mousedown="(e) => nodeDrag.startNodeDrag(e, n, readonly)"
           @click="(e) => onNodeClick(e, n)"
@@ -1161,6 +1015,33 @@ watch(
         @click="runBalance"
       >
         <Icon name="balance" />
+      </button>
+      <span class="zm-tb-divider" />
+      <!-- 1.html-style layout mode switcher.  Each button highlights
+           when its mode is active.  Clicking triggers a re-layout. -->
+      <button
+        class="zm-tb-btn"
+        :class="{ active: settings.layoutMode === 'mindmap' }"
+        title="思维导图布局 (中心辐射)"
+        @click="setLayoutMode('mindmap')"
+      >
+        <Icon name="mindmap" />
+      </button>
+      <button
+        class="zm-tb-btn"
+        :class="{ active: settings.layoutMode === 'tree' }"
+        title="树形布局 (向右展开)"
+        @click="setLayoutMode('tree')"
+      >
+        <Icon name="tree" />
+      </button>
+      <button
+        class="zm-tb-btn"
+        :class="{ active: settings.layoutMode === 'org' }"
+        title="组织结构布局 (向下展开)"
+        @click="setLayoutMode('org')"
+      >
+        <Icon name="org" />
       </button>
       <span class="zm-tb-divider" />
       <button
@@ -1346,6 +1227,10 @@ watch(
 .zm-tb-btn:hover {
   background: #f1f5f9;
   color: #1e293b;
+}
+.zm-tb-btn.active {
+  background: var(--zm-tb-active, #fff7ed);
+  color: var(--zm-tb-active-fg, #c2410c);
 }
 .zm-tb-divider {
   width: 1px;
