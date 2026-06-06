@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import type { MindMapSettings } from '../types'
+import type { MindMapSettings, LineStyle } from '../types'
 
 const props = defineProps<{
   settings: MindMapSettings
@@ -48,6 +48,13 @@ const endLabel = computed(() => {
   if (w < 2.0) return '中'
   return '粗'
 })
+
+/** Line style picker options. The icon shows the line shape; the
+ *  label is the Chinese name. */
+const LINE_STYLE_OPTIONS: { value: LineStyle; label: string; viewBox: string }[] = [
+  { value: 'curve', label: '圆弧', viewBox: '0 0 28 14' },
+  { value: 'straight', label: '直线', viewBox: '0 0 28 14' },
+]
 
 // local node-style form state — not bound to props; user types here,
 // then "应用" commits via emit.  This keeps the panel simple while
@@ -151,6 +158,39 @@ const previewLines = computed(() => {
         />
       </div>
 
+      <div class="zm-settings-row">
+        <span class="zm-settings-label">线条类型</span>
+        <div class="zm-line-style-group">
+          <button
+            v-for="opt in LINE_STYLE_OPTIONS"
+            :key="opt.value"
+            class="zm-line-style-btn"
+            :class="{ 'is-on': settings.lineStyle === opt.value }"
+            :title="opt.label"
+            @click="set('lineStyle', opt.value)"
+          >
+            <svg :viewBox="opt.viewBox" width="28" height="14" preserveAspectRatio="none">
+              <path
+                v-if="opt.value === 'curve'"
+                d="M 0 12 C 8 0, 20 0, 28 12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              />
+              <line
+                v-else
+                x1="0" y1="12" x2="28" y2="12"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+              />
+            </svg>
+            <span class="zm-line-style-label">{{ opt.label }}</span>
+          </button>
+        </div>
+      </div>
+
       <label class="zm-settings-row">
         <span class="zm-settings-label">一级分支彩虹色</span>
         <button
@@ -197,6 +237,10 @@ const previewLines = computed(() => {
       <div class="zm-settings-row">
         <span class="zm-settings-label">线条细端</span>
         <span class="zm-settings-value-tag">{{ settings.lineWidthEnd.toFixed(1) }}</span>
+      </div>
+      <div class="zm-settings-row">
+        <span class="zm-settings-label">线条类型</span>
+        <span class="zm-settings-value-tag">{{ settings.lineStyle === 'curve' ? '圆弧' : '直线' }}</span>
       </div>
       <label class="zm-settings-row">
         <span class="zm-settings-label">一级分支彩虹色</span>
@@ -434,6 +478,38 @@ const previewLines = computed(() => {
   color: #94a3b8;
   font-size: 12px;
   line-height: 1;
+}
+.zm-line-style-group {
+  display: flex;
+  gap: 6px;
+}
+.zm-line-style-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: all 0.12s;
+  font-family: inherit;
+  min-width: 56px;
+}
+.zm-line-style-btn:hover {
+  border-color: #cbd5e1;
+  color: #475569;
+}
+.zm-line-style-btn.is-on {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #3b82f6;
+}
+.zm-line-style-label {
+  font-size: 11px;
+  font-weight: 500;
 }
 .zm-settings-preview {
   margin-top: 8px;
