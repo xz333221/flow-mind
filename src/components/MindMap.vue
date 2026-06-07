@@ -405,6 +405,12 @@ const nodeDrag = useNodeDrag({
     // Ctrl+Z can pull the dragged node back.  useNodeDrag.getOffsets
     // returns the committed offset map AFTER the drag end.
     record()
+    // Also re-trigger the layout computed.  When autoBalanceOnChange
+    // is on, this re-runs runBalance() (resetOffsets + balanced=true)
+    // — which is what the user expects after dropping a node:
+    // the dragged position is taken as the new starting point and
+    // the rest of the tree re-balances around it.
+    triggerRef()
   },
 })
 
@@ -1098,11 +1104,11 @@ watch(
             fontWeight: nodeFontWeight(n),
             // 1.html centering trick: position the box by its center
             // (x,y) and let the browser center it via transform.
-            // The in-flight drag delta goes on the transform (NOT
-            // on left/top) so that the SVG edges, which read
-            // `nodePos`, track the node 1:1.  Adding both would
-            // shift the node by 2× the cursor delta on mouseup.
-            transform: `translate(calc(-50% + ${nodeDrag.liveDragDelta(n.id).x}px), calc(-50% + ${nodeDrag.liveDragDelta(n.id).y}px))`,
+            // The in-flight drag delta is folded into `left`/`top` via
+            // nodePos so the SVG edges (which also read nodePos)
+            // track the node 1:1 while the user drags.  Adding it
+            // to the transform on top would shift the node by 2×.
+            transform: `translate(-50%, -50%)`,
           }"
           @mousedown="(e) => nodeDrag.startNodeDrag(e, n, readonly)"
           @click="(e) => onNodeClick(e, n)"
