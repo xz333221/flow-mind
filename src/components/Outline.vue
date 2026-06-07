@@ -309,7 +309,7 @@ async function copyOutline() {
           <img :src="addNodeIcon" width="14" height="14" alt="添加同级" draggable="false" />
         </button>
         <button
-          v-if="!props.readonly && row.hasChildren"
+          v-if="!props.readonly"
           class="zm-outline-row-action"
           title="添加子节点"
           @click.stop="emit('addChild', row.id)"

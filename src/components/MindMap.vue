@@ -440,16 +440,11 @@ const nodeDrag = useNodeDrag({
     record()
     preserveOnNextLayout.value = true
     triggerRef()
-    // autoBalance path: re-center the view after the new layout
-    // settles so the user sees the dragged result.  We drive
-    // autoBalance here directly (rather than relying on
-    // triggerRef's autoBalance branch) because the layout pass
-    // must read preserveOnNextLayout BEFORE we clear it — the
-    // autoBalance branch in triggerRef would re-run layout
-    // without the flag and undo our commit.
-    if (settings.autoBalanceOnChange && !props.readonly) {
-      nextTick(() => nextTick(() => resetView()))
-    }
+    // NB: we used to call resetView() here on autoBalance, but
+    // re-centering after every drag yanks the user's zoom and
+    // wipes out the position they just chose.  The dragged node
+    // already lives at the right spot via preserveOnNextLayout —
+    // there's nothing to re-center.
   },
 })
 
@@ -1087,10 +1082,14 @@ onMounted(() => {
 })
 
 // re-center when layout dimensions change
-watch(
-  () => layoutResult.value.width,
-  () => nextTick(() => resetView())
-)
+// NB: there used to be a `watch(() => layoutResult.value.width, …)`
+// that auto-reset the view whenever the layout's overall width
+// changed.  It was meant to keep newly-imported data visible, but
+// it also fired on EVERY drag (the dragged subtree changes
+// vbW) and on every collapse / expand — which silently undid the
+// user's zoom + pan.  Callers that need a fresh view already
+// trigger it themselves: setData / importData / runBalance /
+// onMounted all call resetView() explicitly.
 </script>
 
 <template>
@@ -1230,11 +1229,12 @@ watch(
             v-if="!readonly && !n.isRoot && nodeHasChildren(n)"
             class="zm-btn zm-collapse"
             :class="{ 'is-on-left': n.side === -1 }"
+            :style="{ background: branchColor.get(n.id) ?? '#64748b' }"
             :title="isCollapsed(n.id) ? '展开' : '折叠'"
             @mousedown.stop
             @click.stop="toggleCollapse(n.id)"
           >
-            <Icon :name="isCollapsed(n.id) ? 'expand' : 'collapse'" :size="12" />
+            <Icon :name="isCollapsed(n.id) ? 'add' : 'minus'" :size="14" :stroke="2.4" />
           </button>
         </div>
       </div>
@@ -1430,15 +1430,18 @@ watch(
    *  - right-side node (n.side === 1) → button on the right edge
    *  - left-side node  (n.side === -1) → button on the left edge.
    * The default is right-edge (right-side nodes); .is-on-left
-   * overrides. */
-  right: -8px;
+   * overrides.  Background colour is set inline from the node's
+   * rainbow branch hue (or grey when rainbow is off). */
+  right: -10px;
   top: 50%;
+  width: 16px;
+  height: 16px;
   transform: translateY(-50%);
-  background: #64748b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 .zm-collapse.is-on-left {
   right: auto;
-  left: -8px;
+  left: -10px;
 }
 .zm-collapse:hover {
   transform: translateY(-50%) scale(1.15);

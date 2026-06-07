@@ -82,16 +82,20 @@ export function useNodeDrag(opts: NodeDragOptions) {
       const id = draggingNodeId.value
       const dx = dragDelta.value.x
       const dy = dragDelta.value.y
-      // commit offset for the dragged node
-      const off = nodeOffsets.get(id) ?? { x: 0, y: 0 }
-      nodeOffsets.set(id, { x: off.x + dx, y: off.y + dy })
-      // also move children along so the tree stays connected
-      const ids = opts.collectDescendants(id)
-      for (const cid of ids) {
-        const c = nodeOffsets.get(cid) ?? { x: 0, y: 0 }
-        nodeOffsets.set(cid, { x: c.x + dx, y: c.y + dy })
+      // A plain click (mousedown → mouseup with no movement) lands
+      // here with dx/dy = 0.  Skip the commit/onChange — otherwise
+      // the caller's onChange runs resetView() on every node
+      // click and yanks the user's zoom back to fit.
+      if (dx !== 0 || dy !== 0) {
+        const off = nodeOffsets.get(id) ?? { x: 0, y: 0 }
+        nodeOffsets.set(id, { x: off.x + dx, y: off.y + dy })
+        const ids = opts.collectDescendants(id)
+        for (const cid of ids) {
+          const c = nodeOffsets.get(cid) ?? { x: 0, y: 0 }
+          nodeOffsets.set(cid, { x: c.x + dx, y: c.y + dy })
+        }
+        opts.onChange?.()
       }
-      opts.onChange?.()
     }
     draggingNodeId.value = null
     window.removeEventListener('mousemove', onNodeDragMove)
