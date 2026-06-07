@@ -134,17 +134,6 @@ const previewLines = computed(() => {
     <section v-if="!hasSelection" class="zm-settings-section">
       <h4 class="zm-settings-section-title">画布</h4>
 
-      <label class="zm-settings-row">
-        <span class="zm-settings-label">添加/拖动后自动平衡</span>
-        <button
-          class="zm-toggle"
-          :class="{ 'is-on': settings.autoBalanceOnChange }"
-          @click="set('autoBalanceOnChange', !settings.autoBalanceOnChange)"
-        >
-          <span class="zm-toggle-knob" />
-        </button>
-      </label>
-
       <div class="zm-settings-row">
         <span class="zm-settings-label">线条粗端(根部)</span>
         <input

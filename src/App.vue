@@ -103,6 +103,11 @@ const collapsedIds = ref<Set<string>>(new Set())
 const showOutline = ref(false)
 const showData = ref(false)
 const showSettings = ref(false)
+// Preview mode: hides the entire app chrome (top toolbar, node
+// count tip, drawer handle buttons, the MindMap's own toolbar /
+// settings panel) and shows only the canvas + the outline.
+// Toggled by the eye button in the top toolbar.
+const previewMode = ref(false)
 const mindMapRef = ref<InstanceType<typeof MindMap> | null>(null)
 
 // React to URL hash changes so the verify smoke test (and a manual
@@ -160,9 +165,16 @@ function onDocClick(e: MouseEvent) {
   showSettings.value = false
 }
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape' && showSettings.value) {
-    showSettings.value = false
-    e.stopPropagation()
+  if (e.key === 'Escape') {
+    if (showSettings.value) {
+      showSettings.value = false
+      e.stopPropagation()
+      return
+    }
+    if (previewMode.value) {
+      previewMode.value = false
+      e.stopPropagation()
+    }
   }
 }
 onMounted(() => {
@@ -265,7 +277,7 @@ const totalNodes = computed(() => countNodes(data.value))
     </Drawer>
 
     <main class="zm-app-main">
-      <div class="zm-app-toolbar">        <button
+      <div v-if="!previewMode" class="zm-app-toolbar">        <button
           v-if="!showOutline"
           class="zm-app-icon-btn"
           title="显示大纲"
@@ -304,11 +316,36 @@ const totalNodes = computed(() => countNodes(data.value))
         </button>
         <span class="zm-app-spacer" />
         <span class="zm-app-tip">{{ data.text || '未命名' }} · {{ totalNodes }} 节点</span>
+        <button
+          class="zm-app-icon-btn"
+          :class="{ 'is-on': previewMode }"
+          title="进入预览模式"
+          @click="previewMode = true"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
       </div>
+      <!-- Preview-mode exit button: a small pill that sits over the
+           canvas so the user can always leave preview mode. -->
+      <button
+        v-if="previewMode"
+        class="zm-app-preview-exit"
+        title="退出预览 (Esc)"
+        @click="previewMode = false"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <line x1="2" y1="2" x2="22" y2="22" />
+        </svg>
+      </button>
       <div class="zm-app-canvas">
         <MindMap
           ref="mindMapRef"
           :data="data"
+          :preview-mode="previewMode"
           @change="onChange"
           @select="onSelect"
         />
@@ -318,7 +355,7 @@ const totalNodes = computed(() => countNodes(data.value))
     <Drawer
       side="right"
       :width="360"
-      :open="showData"
+      :open="showData && !previewMode"
       title="数据"
       @update:open="(v) => (showData = v)"
     >
@@ -331,8 +368,8 @@ const totalNodes = computed(() => countNodes(data.value))
     <!-- Settings: floating popover anchored at the toolbar, toggled by
          the gear button.  Sits above the canvas so it doesn't compete
          with the persistent side drawers. -->
-    <div v-if="showSettings" class="zm-settings-backdrop" @click="showSettings = false" />
-    <div v-if="showSettings" class="zm-settings-popover" @click.stop>
+    <div v-if="showSettings && !previewMode" class="zm-settings-backdrop" @click="showSettings = false" />
+    <div v-if="showSettings && !previewMode" class="zm-settings-popover" @click.stop>
       <div class="zm-settings-popover-header">
         <span class="zm-settings-popover-title">设置</span>
         <button class="zm-settings-close" @click="showSettings = false" title="关闭">
@@ -402,6 +439,33 @@ const totalNodes = computed(() => countNodes(data.value))
 .zm-app-tip {
   font-size: 12px;
   color: #64748b;
+}
+.zm-app-icon-btn.is-on {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+.zm-app-preview-exit {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  transition: background 0.1s, color 0.1s, transform 0.1s;
+}
+.zm-app-preview-exit:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  transform: scale(1.05);
 }
 .zm-app-canvas {
   flex: 1;

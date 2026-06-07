@@ -300,13 +300,24 @@ async function copyOutline() {
           class="zm-outline-row-action"
           title="添加同级"
           @click.stop="emit('addSibling', row.id)"
-        >+·</button>
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="12" y1="3" x2="12" y2="21" />
+          </svg>
+        </button>
         <button
           v-if="!props.readonly && row.hasChildren"
           class="zm-outline-row-action"
           title="添加子节点"
           @click.stop="emit('addChild', row.id)"
-        >+›</button>
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3 v12" />
+            <path d="M7 10 l5 5 l5 -5" />
+            <line x1="3" y1="21" x2="21" y2="21" />
+          </svg>
+        </button>
         <button
           class="zm-outline-row-copy"
           :class="{ 'is-success': copiedId === row.id }"
@@ -478,27 +489,29 @@ async function copyOutline() {
   outline: none;
 }
 .zm-outline-row-action {
-  width: 22px;
+  width: 20px;
   height: 20px;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   color: #94a3b8;
-  font-size: 11px;
-  font-family: inherit;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 4px;
   flex-shrink: 0;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
-  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  transition: opacity 0.1s, background 0.1s, color 0.1s, border-color 0.1s;
 }
 .zm-outline-row:hover .zm-outline-row-action,
 .zm-outline-row.is-selected .zm-outline-row-action {
   opacity: 1;
 }
 .zm-outline-row-action:hover {
-  background: #e2e8f0;
-  color: #1e293b;
+  background: #e0e7ff;
+  color: #4338ca;
+  border-color: #c7d2fe;
 }
 .zm-outline-row-copy {
   width: 20px;

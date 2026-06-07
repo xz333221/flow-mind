@@ -26,8 +26,17 @@ const props = withDefaults(
     data: MindMapNode
     readonly?: boolean
     theme?: MindMapTheme
+    /**
+     * When true, hides the MindMap's own toolbar and any UI that
+     * isn't strictly the canvas (resize handles, collapse
+     * buttons still appear on hover so the user can still
+     * interact).  The app-level top toolbar / drawers are
+     * controlled by the parent (App.vue) — this only toggles
+     * the canvas's own chrome.
+     */
+    previewMode?: boolean
   }>(),
-  { readonly: false }
+  { readonly: false, previewMode: false }
 )
 
 const emit = defineEmits<{
@@ -1229,7 +1238,7 @@ watch(
       </div>
     </div>
 
-    <div class="zm-toolbar">
+    <div v-if="!props.previewMode" class="zm-toolbar">
       <button class="zm-tb-btn" title="放大" @click="panZoom.zoomIn">
         <Icon name="zoom-in" />
       </button>
@@ -1246,7 +1255,11 @@ watch(
         title="添加子节点 (Tab)"
         @click="selectedId && doAddChild(selectedId)"
       >
-        <Icon name="add" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3 v12" />
+          <path d="M7 10 l5 5 l5 -5" />
+          <line x1="3" y1="21" x2="21" y2="21" />
+        </svg>
       </button>
       <button
         v-if="!readonly"
@@ -1254,15 +1267,10 @@ watch(
         title="添加同级 (Enter)"
         @click="selectedId && doAddSibling(selectedId)"
       >
-        <Icon name="edit" />
-      </button>
-      <span class="zm-tb-divider" />
-      <button
-        class="zm-tb-btn"
-        title="平衡图表:重新均匀分布各分支,并撤销手动拖动"
-        @click="runBalance"
-      >
-        <Icon name="balance" />
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="12" y1="3" x2="12" y2="21" />
+        </svg>
       </button>
       <span class="zm-tb-divider" />
       <!-- 1.html-style layout mode switcher.  Each button highlights
