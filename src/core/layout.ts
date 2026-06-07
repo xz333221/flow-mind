@@ -68,10 +68,15 @@ import type { MindMapNode, MindMapImage } from '../types'
 // Width is content-measured; minW + padH are the only constants we
 // keep here.  Height is fixed per level (1.html does the same).
 // =====================================================================
-const NODE_FONTS = [17, 14, 13, 12]
-const NODE_FONT_WEIGHTS = [700, 500, 400, 300]
-const NODE_HEIGHTS = [48, 38, 30, 26]
-const NODE_MIN_W = [100, 70, 50, 40]
+// XMind-style tier metrics — root is large and pill-shaped, level 1
+// is medium with a clear visual gap, levels 2-3 step down through a
+// tighter spacing curve so the canvas reads as a clear hierarchy
+// (root > topic > sub-topic > leaf) rather than a uniform decay.
+// Index 0 = root, 1 = top branch, 2 = sub-branch, 3+ = leaf tier.
+const NODE_FONTS = [18, 15, 13, 12]
+const NODE_FONT_WEIGHTS = [700, 600, 500, 400]
+const NODE_HEIGHTS = [52, 40, 32, 28]
+const NODE_MIN_W = [120, 80, 60, 44]
 /** Horizontal padding in `em`, matching `.zm-node { padding: 0 1.6em }`
  *  in MindMap.vue.  Keep these in sync or the SVG edges will pierce
  *  the node box (1.6em > the px value previously here for tiers 2/3,
