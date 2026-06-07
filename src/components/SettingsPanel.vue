@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import type { MindMapSettings, LineStyle } from '../types'
+import type { MindMapSettings, LineStyle, BranchPalette } from '../types'
+import { BUILTIN_PALETTES, parsePaletteInput } from '../core/palettes'
 
 const props = defineProps<{
   settings: MindMapSettings
@@ -76,6 +77,94 @@ function resetStyle() {
   emit('update:nodeStyle', { ...localStyle })
 }
 
+// =====================================================================
+// Palette picker
+// =====================================================================
+//
+// All palettes (built-in + user-defined custom) — fed by
+// `props.settings.customPalettes` and the BUILTIN_PALETTES export.
+// The active palette id is `props.settings.branchPaletteId`.  This
+// view is purely derived; mutations are sent back through the
+// existing `update:settings` emit so the parent (App.vue) can
+// persist and re-feed via `applySettings` — same round-trip the
+// other settings use.
+
+// Editable textarea mirror for each custom palette.  Keyed by
+// palette id so the input survives across re-renders.  We hold the
+// text separately from the canonical `colors` array so the user
+// can paste-then-tweak-then-commit without the canvas live-rendering
+// malformed hex strings.
+const customDrafts = reactive<Record<string, string>>({})
+
+function draftFor(p: BranchPalette): string {
+  if (customDrafts[p.id] === undefined) {
+    customDrafts[p.id] = p.colors.join('\n')
+  }
+  return customDrafts[p.id]
+}
+
+function commitCustomPalette(p: BranchPalette) {
+  const draft = customDrafts[p.id] ?? ''
+  const colors = parsePaletteInput(draft)
+  if (colors.length === 0) {
+    // Reject the empty save — restore the draft to the palette's
+    // current colors so the user sees a working state and can fix.
+    customDrafts[p.id] = p.colors.join('\n')
+    return
+  }
+  const next = props.settings.customPalettes.map((q) =>
+    q.id === p.id ? { ...q, colors } : q
+  )
+  emit('update:settings', { customPalettes: next })
+}
+
+function addCustomPalette() {
+  // Seed the new palette from the currently active scheme so it
+  // visually matches what the user has on canvas right now.
+  const active = allPalettes.value.find(
+    (p) => p.id === props.settings.branchPaletteId
+  )
+  const seed = active ? [...active.colors] : [...BUILTIN_PALETTES[0].colors]
+  // Avoid id collisions with built-ins or existing customs.
+  const baseId = 'custom-'
+  let id = baseId + (props.settings.customPalettes.length + 1)
+  while (
+    BUILTIN_PALETTES.some((p) => p.id === id) ||
+    props.settings.customPalettes.some((p) => p.id === id)
+  ) {
+    id = baseId + Math.random().toString(36).slice(2, 7)
+  }
+  const palette: BranchPalette = {
+    id,
+    name: `我的配色 ${props.settings.customPalettes.length + 1}`,
+    colors: seed,
+  }
+  emit('update:settings', {
+    customPalettes: [...props.settings.customPalettes, palette],
+    branchPaletteId: id,
+  })
+  // Pre-fill the draft with the seed so the textarea isn't empty.
+  customDrafts[id] = seed.join('\n')
+}
+
+function deleteCustomPalette(p: BranchPalette) {
+  const next = props.settings.customPalettes.filter((q) => q.id !== p.id)
+  // If the deleted palette was active, fall back to 'default'.
+  const active = props.settings.branchPaletteId === p.id
+    ? 'default'
+    : props.settings.branchPaletteId
+  emit('update:settings', {
+    customPalettes: next,
+    ...(active !== props.settings.branchPaletteId ? { branchPaletteId: active } : {}),
+  })
+  delete customDrafts[p.id]
+}
+
+const allPalettes = computed<BranchPalette[]>(() => [
+  ...BUILTIN_PALETTES,
+  ...props.settings.customPalettes,
+])
+
 // simple preset palette for the swatch buttons
 const PALETTE = ['#f87171', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee', '#818cf8', '#c084fc', '#1e2937', '#f8fafc', '#94a3b8']
 
@@ -91,6 +180,9 @@ const PALETTE = ['#f87171', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee
  *  parent end of the first line so the user can see what they're
  *  dialing.  The preview lives at the top of the popover. */
 const PREVIEW_DEPTHS = [0, 1, 2, 3] as const
+// Preview swatch colors are sourced from the active palette when
+// rainbow is on (so the user sees the scheme they're committing
+// to) and from the line color otherwise.
 const PREVIEW_PALETTE = ['#f87171', '#fb923c', '#34d399', '#818cf8']
 function widthAt(depth: number, total: number, start: number, end: number): number {
   if (total <= 1) return start
@@ -110,6 +202,14 @@ const previewLines = computed(() => {
   const total = PREVIEW_DEPTHS.length
   const left = 8
   const right = 192
+  // When the user has rainbow on, sample the active palette so the
+  // preview line tint tracks the selected scheme.
+  const active = allPalettes.value.find(
+    (p) => p.id === props.settings.branchPaletteId
+  )
+  const colors = active && active.colors.length
+    ? active.colors
+    : PREVIEW_PALETTE
   return PREVIEW_DEPTHS.map((d, i) => {
     const y = 10 + (i * 60) / (total - 1)
     return {
@@ -120,7 +220,9 @@ const previewLines = computed(() => {
       // Render the FULL width as a fat stroke so the user sees the
       // band, not just a thin centerline.
       w: tapered ? taperedParentW(d, start, end) : widthAt(d, total, start, end),
-      color: PREVIEW_PALETTE[i % PREVIEW_PALETTE.length],
+      color: props.settings.rainbowBranch
+        ? colors[i % colors.length]
+        : '#94a3b8',
     }
   })
 })
@@ -220,6 +322,90 @@ const previewLines = computed(() => {
         </button>
       </label>
       <p class="zm-settings-hint">关闭时所有线条使用统一的 lineColor。</p>
+
+      <div v-if="settings.rainbowBranch" class="zm-palette-picker">
+        <h5 class="zm-palette-picker-title">配色方案</h5>
+
+        <!-- Built-in palettes — the user picks one by clicking the
+             card.  Active card gets a highlighted border. -->
+        <div class="zm-palette-grid">
+          <button
+            v-for="p in BUILTIN_PALETTES"
+            :key="p.id"
+            type="button"
+            class="zm-palette-card"
+            :class="{ 'is-active': settings.branchPaletteId === p.id }"
+            :title="p.name"
+            @click="set('branchPaletteId', p.id)"
+          >
+            <span class="zm-palette-card-name">{{ p.name }}</span>
+            <span class="zm-palette-card-swatches">
+              <span
+                v-for="(c, i) in p.colors"
+                :key="i"
+                class="zm-palette-card-swatch"
+                :style="{ background: c }"
+              />
+            </span>
+          </button>
+        </div>
+
+        <!-- Custom palettes — same clickable card, plus an inline
+             textarea for editing colors.  Save commits; the canvas
+             doesn't re-render until the user clicks "保存", so a
+             half-typed color string doesn't paint garbage. -->
+        <div v-if="settings.customPalettes.length" class="zm-palette-customs">
+          <div
+            v-for="p in settings.customPalettes"
+            :key="p.id"
+            class="zm-palette-custom"
+          >
+            <button
+              type="button"
+              class="zm-palette-card"
+              :class="{ 'is-active': settings.branchPaletteId === p.id }"
+              :title="p.name"
+              @click="set('branchPaletteId', p.id)"
+            >
+              <span class="zm-palette-card-name">{{ p.name }}</span>
+              <span class="zm-palette-card-swatches">
+                <span
+                  v-for="(c, i) in p.colors"
+                  :key="i"
+                  class="zm-palette-card-swatch"
+                  :style="{ background: c }"
+                />
+              </span>
+            </button>
+            <textarea
+              class="zm-palette-textarea"
+              rows="2"
+              spellcheck="false"
+              placeholder="一行一个 hex,例如 #f87171"
+              :value="draftFor(p)"
+              @input="(e) => (customDrafts[p.id] = (e.target as HTMLTextAreaElement).value)"
+            />
+            <div class="zm-palette-custom-actions">
+              <button
+                type="button"
+                class="zm-data-btn is-primary"
+                @click="commitCustomPalette(p)"
+              >保存</button>
+              <button
+                type="button"
+                class="zm-data-btn"
+                @click="deleteCustomPalette(p)"
+              >删除</button>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="zm-palette-add"
+          @click="addCustomPalette"
+        >+ 新建配色</button>
+      </div>
 
       <label class="zm-settings-row">
         <span class="zm-settings-label">每条连线独立渐变</span>
@@ -646,5 +832,131 @@ const previewLines = computed(() => {
 .zm-settings-reset:hover {
   background: #f1f5f9;
   color: #1e293b;
+}
+
+/* =====================================================================
+   Palette picker
+   ===================================================================== */
+
+.zm-palette-picker {
+  margin: 6px 0 8px;
+}
+.zm-palette-picker-title {
+  margin: 6px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  letter-spacing: 0.02em;
+}
+.zm-palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+}
+.zm-palette-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 6px 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: all 0.12s;
+  min-width: 0;
+}
+.zm-palette-card:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+.zm-palette-card.is-active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.18);
+  background: #eff6ff;
+}
+.zm-palette-card-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zm-palette-card.is-active .zm-palette-card-name {
+  color: #1d4ed8;
+}
+.zm-palette-card-swatches {
+  display: flex;
+  gap: 1px;
+  height: 8px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.zm-palette-card-swatch {
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+}
+.zm-palette-customs {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.zm-palette-custom {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.zm-palette-custom .zm-palette-card {
+  border-style: dashed;
+  background: #f8fafc;
+}
+.zm-palette-textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 4px 6px;
+  resize: vertical;
+  min-height: 32px;
+  outline: none;
+  transition: border-color 0.1s;
+}
+.zm-palette-textarea:focus {
+  border-color: #3b82f6;
+  background: #ffffff;
+}
+.zm-palette-custom-actions {
+  display: flex;
+  gap: 6px;
+}
+.zm-palette-add {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: #475569;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.zm-palette-add:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+  border-color: #94a3b8;
 }
 </style>

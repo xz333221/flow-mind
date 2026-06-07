@@ -7,6 +7,7 @@ import Icon from './Icon.vue'
 import addNodeIcon from '../assets/svg/add-node.svg?url'
 import addSubNodeIcon from '../assets/svg/add-sub-node.svg?url'
 import { layout, type LayoutNode } from '../core/layout'
+import { BUILTIN_PALETTES, resolvePalette, type BranchPalette } from '../core/palettes'
 import {
   addChild,
   addSibling,
@@ -47,6 +48,11 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'change', data: MindMapNode): void
   (e: 'select', node: MindMapNode | null): void
+  /** Fired when the user clicks a node's note icon or picks
+   *  "添加笔记" / "编辑笔记" from the right-click menu.  The
+   *  parent is expected to open the right-side note drawer
+   *  scoped to the given node. */
+  (e: 'edit-note', nodeId: string): void
 }>()
 
 const wrapperRef = ref<HTMLElement | null>(null)
@@ -262,7 +268,7 @@ function menuRemoveLink() {
 function menuEditNote() {
   const id = contextMenu.value?.nodeId
   if (!id) return
-  startNoteEdit(id)
+  emitEditNote(id)
 }
 function menuRemoveNote() {
   const id = contextMenu.value?.nodeId
@@ -276,53 +282,17 @@ function menuRemoveImage() {
 }
 
 // ---------------------------------------------------------------------------
-// Note editor — the inline textarea that appears below a node when
-// the user picks "添加笔记" / "编辑笔记".  We track only the id
-// of the node being edited (single-editor rule) plus the working
-// text.  On commit (blur / Esc / Ctrl+Enter), we apply or remove
-// the note.
+// Note editing — the actual textarea lives in App.vue's right-side
+// "笔记" drawer (NotePanel.vue).  MindMap only knows when the
+// user wants to open it, by emitting `edit-note`.  We also keep
+// `notePreview` for the icon tooltip.
 // ---------------------------------------------------------------------------
-const editingNoteId = ref<string | null>(null)
-const noteDraft = ref('')
 
-function startNoteEdit(id: string) {
+/** Ask App.vue to open the note drawer for this node.  The
+ *  drawer auto-focuses its textarea on open. */
+function emitEditNote(id: string) {
   if (props.readonly) return
-  const n = findNode(dataRef.value, id)
-  if (!n) return
-  editingNoteId.value = id
-  noteDraft.value = n.note?.text ?? ''
-  // Focus + select on next tick.  The editor mounts in the same
-  // pass; v-if makes the mount async, so we wait a tick.
-  nextTick(() => {
-    const ta = document.querySelector<HTMLTextAreaElement>(
-      `[data-node-id="${id}"] .zm-node-note-editor textarea`
-    )
-    if (ta) {
-      ta.focus()
-      ta.setSelectionRange(0, 0)
-    }
-  })
-}
-function commitNoteEdit(opts: { cancel?: boolean } = {}) {
-  const id = editingNoteId.value
-  if (!id) return
-  if (!opts.cancel) applyNodeNote(id, noteDraft.value)
-  editingNoteId.value = null
-  noteDraft.value = ''
-  // Re-arm the deselect-suppress flag: blur on the editor bubbles
-  // a click to the canvas that would otherwise clear the user's
-  // selection.  We want to keep the node selected so the user can
-  // immediately re-edit or close.
-  suppressNextCanvasClick = true
-}
-function onNoteEditorKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    commitNoteEdit({ cancel: true })
-  } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault()
-    commitNoteEdit()
-  }
+  emit('edit-note', id)
 }
 
 /** Truncate the note text to a single-line preview for the icon
@@ -345,7 +315,6 @@ function onPaste(e: ClipboardEvent) {
   if (props.readonly) return
   // Don't hijack paste inside any text-editing surface.
   if (editingId.value) return
-  if (editingNoteId.value) return
   const tgt = e.target as HTMLElement | null
   if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable)) {
     return
@@ -570,6 +539,8 @@ const settings = reactive<MindMapSettings>({
   lineWidthStart: 12.0,
   lineWidthEnd: 3.6,
   rainbowBranch: true,
+  branchPaletteId: 'default',
+  customPalettes: [],
   lineStyle: 'curve',
   layoutMode: 'mindmap',
   taperedEdge: true,
@@ -712,17 +683,25 @@ const lrRootChildren = computed<LayoutNode[]>(() => layoutResult.value.root.chil
 // (intentionally no rootEdgeAnchor — 1.html uses simple rect-edge
 // midpoints.  The fan geometry is in the bezier control points.)
 
-const RAINBOW = [
-  '#f87171', '#fb923c', '#fbbf24', '#a3e635',
-  '#34d399', '#22d3ee', '#818cf8', '#c084fc',
-]
+const RAINBOW_FALLBACK = BUILTIN_PALETTES[0].colors
+
+// Active palette resolved from settings.branchPaletteId + settings.customPalettes.
+// Falls back to the built-in 'default' palette if the id is unknown
+// (e.g. a custom palette was deleted).  Recomputed reactively so a
+// settings change in the panel re-themes the canvas immediately.
+const activePalette = computed<BranchPalette>(() =>
+  resolvePalette(settings.branchPaletteId, settings.customPalettes)
+)
 
 const branchColor = computed<Map<string, string>>(() => {
   const m = new Map<string, string>()
   if (!settings.rainbowBranch) return m
+  const colors = activePalette.value.colors.length > 0
+    ? activePalette.value.colors
+    : RAINBOW_FALLBACK
   for (let i = 0; i < lrRootChildren.value.length; i++) {
     const c = lrRootChildren.value[i]
-    m.set(c.id, RAINBOW[i % RAINBOW.length])
+    m.set(c.id, colors[i % colors.length])
   }
   const walk = (n: LayoutNode, hue: string) => {
     m.set(n.id, hue)
@@ -730,7 +709,7 @@ const branchColor = computed<Map<string, string>>(() => {
   }
   for (let i = 0; i < lrRootChildren.value.length; i++) {
     const c = lrRootChildren.value[i]
-    walk(c, RAINBOW[i % RAINBOW.length])
+    walk(c, colors[i % colors.length])
   }
   return m
 })
@@ -1367,6 +1346,8 @@ defineExpose<MindMapExpose>({
     if (s.lineWidthEnd !== undefined)
       settings.lineWidthEnd = Math.max(0.3, Math.min(10, s.lineWidthEnd))
     if (s.rainbowBranch !== undefined) settings.rainbowBranch = s.rainbowBranch
+    if (s.branchPaletteId !== undefined) settings.branchPaletteId = s.branchPaletteId
+    if (s.customPalettes !== undefined) settings.customPalettes = s.customPalettes
     if (s.lineStyle !== undefined) settings.lineStyle = s.lineStyle
     if (s.taperedEdge !== undefined) settings.taperedEdge = s.taperedEdge
     if (s.showOrderBadge !== undefined) settings.showOrderBadge = s.showOrderBadge
@@ -1376,11 +1357,20 @@ defineExpose<MindMapExpose>({
     lineWidthStart: settings.lineWidthStart,
     lineWidthEnd: settings.lineWidthEnd,
     rainbowBranch: settings.rainbowBranch,
+    branchPaletteId: settings.branchPaletteId,
+    customPalettes: settings.customPalettes,
     lineStyle: settings.lineStyle,
     layoutMode: settings.layoutMode,
     taperedEdge: settings.taperedEdge,
     showOrderBadge: settings.showOrderBadge,
   }),
+  setBranchPalette: (id) => {
+    if (!id) return
+    const known = [...BUILTIN_PALETTES, ...settings.customPalettes].find((p) => p.id === id)
+    if (known) settings.branchPaletteId = id
+  },
+  getBranchPalette: () => settings.branchPaletteId,
+  getBranchPalettes: () => [...BUILTIN_PALETTES, ...settings.customPalettes],
 })
 
 watch(
@@ -1534,7 +1524,7 @@ onMounted(() => {
               class="zm-node-note-btn"
               type="button"
               :title="notePreview(n.note.text)"
-              @click.stop="startNoteEdit(n.id)"
+              @click.stop="emitEditNote(n.id)"
               @mousedown.stop
             ><Icon name="note" :size="11" :stroke="2" /></button>
           </span>
@@ -1605,33 +1595,6 @@ onMounted(() => {
           >
             <Icon name="x" :size="9" :stroke="2.2" />
           </button>
-
-          <!-- Inline note editor — shown only on the node whose
-               id matches editingNoteId.  Sits in screen space
-               (NOT world space) so it doesn't shrink/grow with
-               the canvas zoom — typing a multi-line note in a
-               tiny zoom level would be unusable otherwise.  The
-               position is computed from the node's world bbox
-               and the current panZoom transform. -->
-          <div
-            v-if="editingNoteId === n.id"
-            class="zm-node-note-editor"
-            :style="{
-              left: (n.x * panZoom.scale.value + panZoom.offsetX.value) + 'px',
-              top: (n.y * panZoom.scale.value + panZoom.offsetY.value + (n.height / 2 + 6) * panZoom.scale.value) + 'px',
-              minWidth: Math.max(n.width, 220) + 'px',
-            }"
-            @mousedown.stop
-            @click.stop
-          >
-            <textarea
-              v-model="noteDraft"
-              rows="4"
-              :placeholder="'在此输入笔记内容 (Ctrl+Enter 提交, Esc 取消)'"
-              @blur="commitNoteEdit()"
-              @keydown="onNoteEditorKeydown"
-            />
-          </div>
         </div>
       </div>
 
@@ -1780,7 +1743,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 1.6em;
+  padding: 0 0.8em;
   box-sizing: border-box;
   border-radius: 8px;
   border: 1px solid;
@@ -2021,39 +1984,10 @@ onMounted(() => {
   border-color: #fca5a5;
 }
 
-/* Inline note editor — sits in screen space below the node,
- * not in the world (scaled) layer, so the textarea stays a
- * usable size at any zoom level.  Sibling of .zm-node in the
- * DOM, but visually anchored to the node via the inline
- * `left`/`top` styles set in the template. */
-.zm-node-note-editor {
-  position: absolute;
-  z-index: 6;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
-  padding: 8px;
-  transform: translateX(-50%);
-}
-.zm-node-note-editor textarea {
-  display: block;
-  width: 100%;
-  min-width: 220px;
-  min-height: 80px;
-  border: none;
-  outline: none;
-  resize: vertical;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #1e293b;
-  background: transparent;
-  font-family: inherit;
-}
-.zm-node-note-editor textarea::placeholder {
-  color: #94a3b8;
-}
+/* Inline note editor removed in commit 0ec… — the note editor
+ * now lives in the right-side drawer (NotePanel.vue).  Keep
+ * the section header commented for archaeology. */
+
 /* Debug overlay: draws a small "1./2./3." label on every node
  * showing its position in its parent's children array.  Hidden by
  * default — enable with `?debug=order` in the URL. */

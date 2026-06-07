@@ -6,6 +6,7 @@ import Outline from './components/Outline.vue'
 import DataPanel from './components/DataPanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import MarkdownPanel from './components/MarkdownPanel.vue'
+import NotePanel from './components/NotePanel.vue'
 import type { MindMapNode, MindMapSettings } from './types'
 
 // Sample data — same shape the user can pass in production.
@@ -104,6 +105,13 @@ const collapsedIds = ref<Set<string>>(new Set())
 const showOutline = ref(false)
 const showData = ref(false)
 const showMarkdown = ref(false)
+const showNote = ref(false)
+// `noteFocusTick` is bumped each time the user picks a node so
+// the NotePanel can re-focus its textarea.  We don't tie the
+// focus to a `v-if` remount because we want the drawer to stay
+// mounted while the user is just moving between nodes — that
+// way the slide-in animation doesn't replay on every click.
+const noteFocusTick = ref(0)
 const showSettings = ref(false)
 // Preview mode: hides the entire app chrome (top toolbar, node
 // count tip, drawer handle buttons, the MindMap's own toolbar /
@@ -126,6 +134,8 @@ const settings = reactive<MindMapSettings>({
   lineWidthStart: 12.0,
   lineWidthEnd: 3.6,
   rainbowBranch: true,
+  branchPaletteId: 'default',
+  customPalettes: [],
   lineStyle: 'curve',
   layoutMode: 'mindmap',
   taperedEdge: true,
@@ -148,6 +158,8 @@ function resetSettings() {
     lineWidthStart: 12.0,
     lineWidthEnd: 0.6,
     rainbowBranch: true,
+    branchPaletteId: 'default',
+    customPalettes: [],
     lineStyle: 'curve',
     layoutMode: 'mindmap',
     taperedEdge: true,
@@ -187,6 +199,8 @@ onMounted(() => {
   // defaults take effect on first render.
   mindMapRef.value?.applySettings({
     rainbowBranch: settings.rainbowBranch,
+    branchPaletteId: settings.branchPaletteId,
+    customPalettes: settings.customPalettes,
     lineWidthStart: settings.lineWidthStart,
     lineWidthEnd: settings.lineWidthEnd,
     lineStyle: settings.lineStyle,
@@ -204,6 +218,81 @@ function onChange(next: MindMapNode) {
 
 function onSelect(node: MindMapNode | null) {
   selectedNode.value = node
+  if (node) {
+    // A node was just selected — open the note drawer and bump
+    // the focus tick so the textarea grabs focus.  We do this
+    // for any selection (not just nodes that already have a
+    // note) so the drawer is always there to add a fresh note.
+    // We also close the other right drawers so they don't
+    // compete for the same horizontal space.
+    if (!showNote.value) {
+      showData.value = false
+      showMarkdown.value = false
+      showNote.value = true
+    }
+    noteFocusTick.value++
+  } else {
+    // The user clicked empty canvas.  Keep the drawer open but
+    // reset to a fresh state.  We don't auto-close here because
+    // the user might just be deselecting to make a marquee
+    // selection — closing the drawer on every deselect would
+    // be jarring.  The panel renders an empty-state when its
+    // `selectedNode` prop is null.
+  }
+}
+
+// Keep `selectedNode` in sync with the data tree.  When the user
+// edits a node's text (which mutates the same object MindMap holds
+// in its `dataRef`), we need NotePanel to re-read the new text.
+// This watcher also catches the case where the selected node is
+// removed entirely (e.g. via the right-click "移除" action).
+watch(data, (next) => {
+  if (!selectedNode.value) return
+  const found = findNodeInData(next, selectedNode.value.id)
+  if (!found) {
+    selectedNode.value = null
+  } else if (found !== selectedNode.value) {
+    // Identity changed (e.g. data tree was replaced via setData).
+    // Replace the reference so the panel re-reads the new fields.
+    selectedNode.value = found
+  }
+}, { deep: false })
+
+function onEditNote(id: string) {
+  // From MindMap's right-click "添加/编辑笔记" — make sure the
+  // target node is the selected one (MindMap does this for us
+  // via its context-menu handler) and open the drawer.
+  if (!selectedNode.value || selectedNode.value.id !== id) {
+    // Race condition: the click hasn't propagated through to
+    // MindMap's `select` emit yet.  Look the node up and use it
+    // directly so the drawer shows the right content.
+    const n = findNodeInData(data.value, id)
+    if (n) {
+      selectedNode.value = n
+    }
+  }
+  showData.value = false
+  showMarkdown.value = false
+  showNote.value = true
+  noteFocusTick.value++
+}
+
+function findNodeInData(root: MindMapNode, id: string): MindMapNode | null {
+  if (root.id === id) return root
+  for (const c of root.children) {
+    const r = findNodeInData(c, id)
+    if (r) return r
+  }
+  return null
+}
+
+function onNoteApply(text: string) {
+  if (!selectedNode.value) return
+  mindMapRef.value?.applyNodeNote(selectedNode.value.id, text)
+}
+function onNoteRemove() {
+  if (!selectedNode.value) return
+  mindMapRef.value?.removeNodeNote(selectedNode.value.id)
 }
 
 function onOutlineSelect(node: MindMapNode) {
@@ -298,7 +387,7 @@ const totalNodes = computed(() => countNodes(data.value))
           v-if="!showData"
           class="zm-app-icon-btn"
           title="显示数据"
-          @click="showData = true; showMarkdown = false"
+          @click="showData = true; showMarkdown = false; showNote = false"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6" />
@@ -309,7 +398,7 @@ const totalNodes = computed(() => countNodes(data.value))
           v-if="!showMarkdown"
           class="zm-app-icon-btn"
           title="显示 Markdown"
-          @click="showMarkdown = true; showData = false"
+          @click="showMarkdown = true; showData = false; showNote = false"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M4 7 V4 H20 V7" />
@@ -362,6 +451,7 @@ const totalNodes = computed(() => countNodes(data.value))
           :preview-mode="previewMode"
           @change="onChange"
           @select="onSelect"
+          @edit-note="onEditNote"
         />
       </div>
     </main>
@@ -392,6 +482,26 @@ const totalNodes = computed(() => countNodes(data.value))
       <MarkdownPanel
         :data="data"
         @import="(d) => (data = d)"
+      />
+    </Drawer>
+
+    <!-- 笔记抽屉：选中节点时自动打开，承载每个节点的 note
+         编辑/查看。同样与"数据"/"Markdown"互斥。  仅在有
+         选中节点时挂载，避免 NotePanel 在 selectedNode=null
+         状态下出现空态闪烁。 -->
+    <Drawer
+      side="right"
+      :width="360"
+      :open="showNote && !previewMode && !!selectedNode"
+      title="笔记"
+      @update:open="(v) => (showNote = v)"
+    >
+      <NotePanel
+        :selected-node="selectedNode"
+        :readonly="false"
+        :focus-tick="noteFocusTick"
+        @apply="onNoteApply"
+        @remove="onNoteRemove"
       />
     </Drawer>
 

@@ -85,6 +85,27 @@ export interface MindMapTheme {
 export type LineStyle = 'curve' | 'straight'
 export type LayoutMode = 'mindmap' | 'tree' | 'org'
 
+/** Identifier for a branch palette — the id of a built-in (e.g.
+ *  'default', 'classic', 'vivid', 'dev', 'mint') or a user-defined
+ *  custom palette.  Strings rather than a string union so users
+ *  can add their own ids without recompiling the type. */
+export type BranchPaletteId = string
+
+/**
+ * A named 8-color palette cycled across top-level branches when
+ * `rainbowBranch` is on.  Exposed in the public API so the library
+ * consumer can register their own scheme (e.g. a corporate brand
+ * palette) via `setBranchPalette` / `customPalettes`.
+ */
+export interface BranchPalette {
+  id: BranchPaletteId
+  name: string
+  /** Hex colors cycled across top-level branches, in display order.
+   *  When a palette has fewer than the number of branches, colors
+   *  wrap around with modulo. */
+  colors: string[]
+}
+
 export interface MindMapSettings {
   /** When the user adds a new node or finishes a drag, automatically
    *  snap the layout back to balanced mode.  Default false. */
@@ -95,6 +116,16 @@ export interface MindMapSettings {
   lineWidthEnd: number
   /** Color-cycle the top-level branches. */
   rainbowBranch: boolean
+  /** Which named palette to use when rainbowBranch is on.  Built-in
+   *  ids: 'default' | 'classic' | 'vivid' | 'dev' | 'mint'.  Any
+   *  custom palette id in `customPalettes` is also valid.  Default
+   *  'default'. */
+  branchPaletteId: BranchPaletteId
+  /** User-defined palettes.  The settings panel lets the user add,
+   *  edit (via a textarea of hex codes), and delete entries.  The
+   *  canvas treats these as first-class palettes alongside the
+   *  built-ins.  Persisted by the host app. */
+  customPalettes: BranchPalette[]
   /** Edge shape between parent and child. 'curve' = fish-gill bezier
    *  (xmind default), 'straight' = direct line segment. */
   lineStyle: LineStyle
@@ -168,6 +199,16 @@ export interface MindMapExpose {
   applySettings: (s: Partial<MindMapSettings>) => void
   /** Read the current effective settings. */
   getSettings: () => MindMapSettings
+  /** Set the active branch palette by id.  The id may be a built-in
+   *  ('default' / 'classic' / 'vivid' / 'dev' / 'mint') or a custom
+   *  palette id from `customPalettes`.  No-op if the id is unknown. */
+  setBranchPalette: (id: BranchPaletteId) => void
+  /** Read the active palette id. */
+  getBranchPalette: () => BranchPaletteId
+  /** Read every palette the canvas knows about — built-ins first,
+   *  then the user's custom palettes.  Useful for the host app to
+   *  render a picker. */
+  getBranchPalettes: () => BranchPalette[]
   /** Stroke width used for the parent end of an edge that starts at
    *  a node of the given depth. Lets the canvas taper sharply
    *  (root → 1st → 2nd → 3rd+) instead of using a single global
