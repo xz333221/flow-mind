@@ -14,6 +14,28 @@ export interface MindMapNode {
    */
   _x?: number
   _y?: number
+  /**
+   * Optional embedded image shown above the node text.  The
+   * image is stored as either a remote URL (preferred) or a
+   * data: URL (fallback for local-file uploads); width/height
+   * reflect the rendered size, which the user can resize via
+   * a drag handle.  naturalW/naturalH preserve the source
+   * aspect ratio so a resize keeps the original proportions.
+   */
+  image?: MindMapImage
+}
+
+export interface MindMapImage {
+  /** Remote URL or data URL.  Always a string — never undefined. */
+  src: string
+  /** Source image intrinsic size, in px.  Used to lock aspect
+   *  ratio during a user-driven resize. */
+  naturalW: number
+  naturalH: number
+  /** Current rendered size, in px.  Drag handle writes to these
+   *  fields.  Clamped to a sane range by the layout (≥24, ≤400). */
+  width: number
+  height: number
 }
 
 export interface MindMapOptions {

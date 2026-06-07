@@ -46,11 +46,15 @@ export interface LayoutNode {
   /** Layout-only: horizontal extent of this node's subtree (read by
    *  layoutVertical / org mode).  Not for public use. */
   _subtreeW: number
+  /** Optional embedded image (mirrored from MindMapNode.image).
+   *  The renderer uses src/width/height; naturalW/H lock the
+   *  resize aspect ratio. */
+  image?: MindMapImage
   children: LayoutNode[]
   parent: LayoutNode | null
 }
 
-import type { MindMapNode } from '../types'
+import type { MindMapNode, MindMapImage } from '../types'
 
 // =====================================================================
 // Node metrics — 1.html's getNodeStyle() table (1.html JS L332-338).
@@ -127,12 +131,35 @@ function measureText(text: string, fontSize: number, fontWeight: number): number
 
 // =====================================================================
 // calcNodeSize — 1.html JS L341-348.  width = max(minW, text+2*padH).
+// For nodes that carry an image, the box grows to fit the image above
+// the text (image width forces a wider box, image+gap+text forces a
+// taller box).  `image` dimensions are clamped to a sensible range so
+// a bad import doesn't blow up the layout.
 // =====================================================================
+const IMG_MIN_W = 24
+const IMG_MAX_W = 400
+const IMG_GAP = 8
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v))
+}
+
 function calcNodeSize(node: MindMapNode, level: number): { w: number; h: number } {
   const t = tierFor(level)
   const textW = measureText(node.text || '', NODE_FONTS[t], NODE_FONT_WEIGHTS[t])
-  const w = Math.max(NODE_MIN_W[t], Math.ceil(textW + padPx(level) * 2))
-  return { w, h: NODE_HEIGHTS[t] }
+  const pad = padPx(level)
+  const textWWithPad = Math.ceil(textW + pad * 2)
+  const textH = NODE_HEIGHTS[t]
+  if (!node.image) {
+    const w = Math.max(NODE_MIN_W[t], textWWithPad)
+    return { w, h: textH }
+  }
+  // Has an image: width accommodates the wider of the text or the
+  // image; height stacks the image + gap + text region.
+  const imgW = clamp(node.image.width, IMG_MIN_W, IMG_MAX_W)
+  const w = Math.max(NODE_MIN_W[t], textWWithPad, Math.ceil(imgW + pad * 2))
+  const h = Math.ceil(node.image.height + IMG_GAP + textH)
+  return { w, h }
 }
 
 export type LayoutMode = 'mindmap' | 'tree' | 'org'
@@ -419,6 +446,7 @@ function buildLayout(
     _dirRight: side,
     _subtreeH: size.h,
     _subtreeW: size.w,
+    image: node.image ? { ...node.image } : undefined,
     children: [],
     parent,
   }

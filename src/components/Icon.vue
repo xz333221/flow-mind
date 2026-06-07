@@ -137,5 +137,16 @@ defineProps<{
       <line x1="12" y1="13" x2="12" y2="17" />
       <line x1="18" y1="13" x2="18" y2="17" />
     </template>
+    <!-- image: rectangle + sun + mountain, picture glyph -->
+    <template v-else-if="name === 'image'">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="9" cy="11" r="1.6" />
+      <polyline points="3 17 9 12 13 15 16 13 21 17" />
+    </template>
+    <!-- x: simple cross -->
+    <template v-else-if="name === 'x'">
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </template>
   </svg>
 </template>

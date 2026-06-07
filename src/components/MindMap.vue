@@ -20,7 +20,7 @@ import {
   clone,
   DEFAULT_NEW_NODE_TEXT,
 } from '../tree'
-import type { MindMapNode, MindMapTheme, MindMapExpose, MindMapSettings, NodeStyle } from '../types' 
+import type { MindMapNode, MindMapTheme, MindMapExpose, MindMapSettings, NodeStyle, MindMapImage } from '../types'
 import { usePanZoom } from '../composables/usePanZoom'
 import { useKeyboard } from '../composables/useKeyboard'
 import { useHistory } from '../composables/useHistory'
@@ -86,6 +86,221 @@ function getNodeStyle(id: string): NodeStyle {
 }
 function getNodeStyleOr(id: string, fallback: NodeStyle): NodeStyle {
   return nodeStyles.get(id) ?? fallback
+}
+
+// ---------------------------------------------------------------------------
+// Node image — embedded picture shown above the node text.  The user picks
+// a file via the on-canvas button; we read it as a data URL, capture the
+// natural dimensions, and stash it on the data tree.  Width/height are
+// user-tweakable via a drag handle on the bottom-right corner of the
+// node.  The drag handle writes back through `applyNodeImage`.
+// ---------------------------------------------------------------------------
+const IMG_MIN_W = 24
+const IMG_MAX_W = 400
+/** Default rendered width for a freshly uploaded image, capped to a
+ *  sane size so a 4000×3000 photo doesn't explode the layout. */
+const IMG_DEFAULT_W = 160
+
+function applyNodeImage(id: string, image: MindMapImage) {
+  const n = findNode(dataRef.value, id)
+  if (!n) return
+  n.image = {
+    src: image.src,
+    naturalW: image.naturalW,
+    naturalH: image.naturalH,
+    width: clamp(image.width, IMG_MIN_W, IMG_MAX_W),
+    height: clamp(image.height, IMG_MIN_W, IMG_MAX_W),
+  }
+  record()
+  triggerRef()
+  emit('change', dataRef.value)
+}
+
+function removeNodeImage(id: string) {
+  const n = findNode(dataRef.value, id)
+  if (!n || !n.image) return
+  delete n.image
+  record()
+  triggerRef()
+  emit('change', dataRef.value)
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v))
+}
+
+/** Read a File into a data URL, decode its natural dimensions, and
+ *  call onLoaded({ src, naturalW, naturalH }).  No-op on error. */
+function readImageFile(file: File, onLoaded: (img: MindMapImage) => void) {
+  const reader = new FileReader()
+  reader.onload = () => {
+    if (typeof reader.result !== 'string') return
+    const src = reader.result
+    const probe = new window.Image()
+    probe.onload = () => {
+      const naturalW = probe.naturalWidth || IMG_DEFAULT_W
+      const naturalH = probe.naturalHeight || IMG_DEFAULT_W
+      // Default rendered width: keep naturalW but cap at IMG_DEFAULT_W.
+      const width = clamp(naturalW, IMG_MIN_W, IMG_DEFAULT_W)
+      const height = clamp(Math.round((naturalH * width) / naturalW), IMG_MIN_W, IMG_MAX_W)
+      onLoaded({ src, naturalW, naturalH, width, height })
+    }
+    probe.onerror = () => {
+      // Some images (SVG, very small) — fall back to a 1:1 box.
+      onLoaded({ src, naturalW: IMG_DEFAULT_W, naturalH: IMG_DEFAULT_W, width: IMG_DEFAULT_W, height: IMG_DEFAULT_W })
+    }
+    probe.src = src
+  }
+  reader.readAsDataURL(file)
+}
+
+/** Click the on-canvas "image" button → open a hidden file picker.
+ *  Hidden in the template; we trigger it programmatically. */
+function onPickImage(nodeId: string) {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  input.style.display = 'none'
+  input.onchange = () => {
+    const file = input.files?.[0]
+    if (!file) return
+    readImageFile(file, (img) => applyNodeImage(nodeId, img))
+    document.body.removeChild(input)
+  }
+  document.body.appendChild(input)
+  input.click()
+}
+
+// ---------------------------------------------------------------------------
+// Resize handle — tracks the in-flight drag (live width/height before
+// commit).  We don't write to dataRef on every mouse move; instead we
+// update the rendered <img> style directly via a CSS class.  On
+// mouseup we push the final size through applyNodeImage() so the
+// history snapshot and layout recompute fire exactly once.
+// ---------------------------------------------------------------------------
+interface ResizeState {
+  nodeId: string
+  startX: number
+  startY: number
+  startW: number
+  startH: number
+  naturalW: number
+  naturalH: number
+  ratio: number
+  pendingW: number
+  pendingH: number
+}
+const resizeState = ref<ResizeState | null>(null)
+const resizingId = computed(() => resizeState.value?.nodeId ?? null)
+
+function onResizeStart(e: MouseEvent, n: LayoutNode) {
+  if (!n.image) return
+  e.preventDefault()
+  e.stopPropagation()
+  const naturalW = n.image.naturalW || n.image.width
+  const naturalH = n.image.naturalH || n.image.height
+  // Guard against 0-division on malformed data.
+  const ratio = naturalH > 0 ? naturalH / naturalW : 1
+  resizeState.value = {
+    nodeId: n.id,
+    startX: e.clientX,
+    startY: e.clientY,
+    startW: n.image.width,
+    startH: n.image.height,
+    naturalW,
+    naturalH,
+    ratio,
+    pendingW: n.image.width,
+    pendingH: n.image.height,
+  }
+  window.addEventListener('mousemove', onResizeMove)
+  window.addEventListener('mouseup', onResizeEnd)
+}
+
+function onResizeMove(e: MouseEvent) {
+  const s = resizeState.value
+  if (!s) return
+  // Convert pixel delta through the current scale so the resize
+  // tracks the user's perceived speed at any zoom level.
+  const scale = panZoom.scale.value || 1
+  const dxScreen = e.clientX - s.startX
+  const nextW = clamp(s.startW + dxScreen / scale, IMG_MIN_W, IMG_MAX_W)
+  const nextH = clamp(nextW * s.ratio, IMG_MIN_W, IMG_MAX_W)
+  s.pendingW = nextW
+  s.pendingH = nextH
+  // Live-update the DOM directly (faster than going through
+  // Vue's render).  The data tree isn't touched yet, so the
+  // next layout pass will still see the old size — that's fine
+  // because the live <img> is the source of truth during the
+  // drag and the node box's height/width are also re-pushed
+  // (so the resize handle stays anchored to the corner).
+  const el = wrapperRef.value?.querySelector<HTMLElement>(
+    `[data-node-id="${s.nodeId}"] .zm-node-img`
+  )
+  if (el) {
+    el.style.width = `${nextW}px`
+    el.style.height = `${nextH}px`
+  }
+  // Also grow the node box so the handle stays put.  The text
+  // strip is ~30px (NODE_HEIGHTS for tier 1) plus the 8px gap.
+  const nodeEl = wrapperRef.value?.querySelector<HTMLElement>(
+    `[data-node-id="${s.nodeId}"]`
+  )
+  if (nodeEl) {
+    const textH = 30
+    nodeEl.style.minWidth = `${Math.max(80, Math.ceil(nextW + 28))}px`
+    nodeEl.style.height = `${Math.ceil(nextH + 8 + textH)}px`
+  }
+}
+
+function onResizeEnd() {
+  const s = resizeState.value
+  window.removeEventListener('mousemove', onResizeMove)
+  window.removeEventListener('mouseup', onResizeEnd)
+  resizeState.value = null
+  if (!s) return
+  const n = findNode(dataRef.value, s.nodeId)
+  if (!n || !n.image) return
+  // Commit the new size through the normal mutation path so the
+  // history snapshot fires once and the layout recomputes.
+  applyNodeImage(s.nodeId, {
+    src: n.image.src,
+    naturalW: n.image.naturalW,
+    naturalH: n.image.naturalH,
+    width: s.pendingW,
+    height: s.pendingH,
+  })
+  // The drag's mouseup landed on the canvas, not on the node, so
+  // the canvas's click handler will fire next and deselect.  Re-
+  // select the node so the resize handle and remove button stay
+  // visible after the user lets go of the handle.
+  selectedId.value = s.nodeId
+  emit('select', n)
+  // Suppress the very next canvas click — even after re-selecting,
+  // the canvas's click handler runs synchronously and would clear
+  // the selection we just set.  The flag is checked once and
+  // cleared.
+  suppressNextCanvasClick = true
+}
+// Track which node the user is hovering.  The image-upload button
+// shows on hover OR when selected, mirroring the collapse-button
+// pattern.  We use a ref (not Vue reactive) so the v-for can
+// re-render cheaply.
+const hoveredId = ref<string | null>(null)
+// Set by onResizeEnd: the drag's mouseup lands on the canvas (not
+// the node), and the canvas's click handler would otherwise clear
+// the selection we just re-set.  Flag is checked once and cleared.
+let suppressNextCanvasClick = false
+function onNodeMouseEnter(id: string) {
+  hoveredId.value = id
+}
+function onNodeMouseLeave(id: string) {
+  if (hoveredId.value === id) hoveredId.value = null
+}
+function isNodeInteractive(id: string): boolean {
+  // The image-upload button should appear when the node is hovered
+  // OR selected.  Same gate as the collapse button on the canvas.
+  return hoveredId.value === id || selectedId.value === id
 }
 const layoutVersion = ref(0)
 // Compact layout is the default. The user clicks "balance" to snap
@@ -692,6 +907,14 @@ function onCanvasMouseDown(e: MouseEvent) {
 }
 
 function onCanvasClick(e: MouseEvent) {
+  // A resize drag just finished: skip this click so the user's
+  // re-select (in onResizeEnd) sticks.  We always return early
+  // because the click target here is the empty canvas (the drag
+  // ended outside the node), so there's nothing useful to do.
+  if (suppressNextCanvasClick) {
+    suppressNextCanvasClick = false
+    return
+  }
   const target = e.target as HTMLElement | null
   if (!target) return
   // Ignore clicks that land on a node or its control buttons.
@@ -1054,6 +1277,8 @@ onMounted(() => {
             'is-root': n.isRoot,
             'is-selected': selectedId === n.id,
             'is-editing': editingId === n.id,
+            'has-image': !!n.image,
+            'is-resizing': resizingId === n.id,
           }"
           :style="{
             left: n.x + 'px',
@@ -1070,7 +1295,18 @@ onMounted(() => {
           }"
           @click="(e) => onNodeClick(e, n)"
           @dblclick="(e) => { e.stopPropagation(); if (!readonly) startEdit(n.id) }"
+          @mouseenter="onNodeMouseEnter(n.id)"
+          @mouseleave="onNodeMouseLeave(n.id)"
         >
+          <img
+            v-if="n.image"
+            class="zm-node-img"
+            :src="n.image.src"
+            :width="n.image.width"
+            :height="n.image.height"
+            :alt="n.text"
+            draggable="false"
+          />
           <span v-if="editingId !== n.id" class="zm-text">{{ n.text }}</span>
           <input
             v-else
@@ -1113,6 +1349,51 @@ onMounted(() => {
             @click.stop="toggleCollapse(n.id)"
           >
             <Icon name="minus" :size="10" :stroke="2.4" />
+          </button>
+
+          <!-- "Add image" hover button.  Mirrors the collapse
+               button's appearance: small outlined circle that
+               reveals on hover / selection.  Position: on the
+               "line-in" side of the node (the side where the
+               edge from the parent lands), so the line-out
+               collapse button keeps its own corner.  Sits a
+               little above the vertical center to clear the
+               collapse button on opposite corners. -->
+          <button
+            v-if="!readonly && !n.image && isNodeInteractive(n.id)"
+            class="zm-btn zm-image-btn"
+            :class="{ 'is-on-left': n.side === -1 }"
+            :style="{ color: branchColor.get(n.id) ?? '#64748b', borderColor: branchColor.get(n.id) ?? '#64748b' }"
+            title="添加图片"
+            @mousedown.stop
+            @click.stop="onPickImage(n.id)"
+          >
+            <Icon name="image" :size="10" :stroke="1.8" />
+          </button>
+
+          <!-- Resize handle — bottom-right corner of the node,
+               only on selected image-bearing nodes.  Drag to
+               scale the image.  Inline handlers update the DOM
+               directly for drag-time fluidity; mouseup commits
+               the new size to the data tree. -->
+          <span
+            v-if="n.image && selectedId === n.id && editingId !== n.id"
+            class="zm-img-resize-handle"
+            title="拖动调整图片大小"
+            @mousedown.stop="(e) => onResizeStart(e, n)"
+          />
+
+          <!-- "Remove image" tiny × button.  Sits a couple of
+               pixels above the resize handle.  Clears the
+               image field and re-runs the layout. -->
+          <button
+            v-if="n.image && selectedId === n.id && editingId !== n.id"
+            class="zm-img-remove-btn"
+            title="移除图片"
+            @mousedown.stop
+            @click.stop="removeNodeImage(n.id)"
+          >
+            <Icon name="x" :size="9" :stroke="2.2" />
           </button>
         </div>
       </div>
@@ -1357,6 +1638,98 @@ onMounted(() => {
 }
 .zm-collapse-badge:hover {
   filter: brightness(0.9);
+}
+
+/* Has-image layout — switch the node from a row (text-only) to a
+ * column (image on top, text below).  Keep both centered so the
+ * box still looks like a chip. */
+.zm-node.has-image {
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+  white-space: normal;
+}
+.zm-node-img {
+  display: block;
+  /* Sized by attributes; live-drag override sets style.width /
+   * style.height directly.  pointer-events:none so the image
+   * never eats a click that should select the node or enter
+   * edit mode. */
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+/* "Add image" hover button — mirrors the collapse button
+ * appearance (outlined ring, branch-coloured), but lives on the
+ * line-in side of the node (opposite the collapse button) and
+ * sits a bit above the vertical mid so the two don't overlap. */
+.zm-image-btn {
+  right: auto;
+  left: -8px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border: 1.5px solid;
+  transform: translateY(calc(-50% - 18px));
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
+}
+.zm-image-btn.is-on-left {
+  right: -8px;
+  left: auto;
+}
+.zm-image-btn:hover {
+  transform: translateY(calc(-50% - 18px)) scale(1.15);
+  background: #ffffff;
+}
+
+/* Resize handle — small square in the bottom-right of the
+ * selected image node.  Always 10×10 in screen space, regardless
+ * of zoom (user expects a 10px grab target).  Cursor changes to
+ * nwse-resize to telegraph the drag direction. */
+.zm-img-resize-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 1.5px solid #3b82f6;
+  border-radius: 2px;
+  cursor: nwse-resize;
+  z-index: 4;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.2);
+}
+.zm-node.is-resizing {
+  cursor: nwse-resize !important;
+}
+
+/* "Remove image" tiny × — sits a bit above the resize handle. */
+.zm-img-remove-btn {
+  position: absolute;
+  right: -5px;
+  bottom: 14px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  padding: 0;
+  z-index: 4;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+.zm-img-remove-btn:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
 }
 /* Debug overlay: draws a small "1./2./3." label on every node
  * showing its position in its parent's children array.  Hidden by
