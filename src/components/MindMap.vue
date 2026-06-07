@@ -197,34 +197,39 @@ function edgeStrokeWidth(depth: number): number {
   return EDGE_STROKE_WIDTHS[Math.min(3, depth)] ?? 2
 }
 
-function nodeBranchColor(n: LayoutNode): string {
-  // 1.html: per-branch color flows from the root's L1 child down to
-  // all descendants.  Used for the L1/L2/L3 left border + the edge
-  // stroke (1.html CSS L88, L96, L103, JS L530/641).
+function nodeBg(n: LayoutNode): string {
+  const s = getNodeStyle(n.id)
+  if (s.bg) return s.bg
+  if (n.isRoot) return theme.value.rootBg
+  if (settings.rainbowBranch) {
+    const hue = branchColor.value.get(n.id)
+    if (hue) return hexWithAlpha(hue, 0.18)
+  }
+  return theme.value.branchBg
+}
+function nodeFg(n: LayoutNode): string {
+  const s = getNodeStyle(n.id)
+  if (s.textColor) return s.textColor
+  if (n.isRoot) return theme.value.rootText
+  if (settings.rainbowBranch) {
+    const hue = branchColor.value.get(n.id)
+    if (hue) return darken(hue, 0.55)
+  }
+  return theme.value.branchText
+}
+function nodeBorder(n: LayoutNode): string {
   const s = getNodeStyle(n.id)
   if (s.borderColor) return s.borderColor
+  if (n.isRoot) return theme.value.rootBg
   if (settings.rainbowBranch) {
-    return branchColor.value.get(n.id) ?? theme.value.lineColor
+    const hue = branchColor.value.get(n.id)
+    if (hue) return darken(hue, 0.3)
   }
   return theme.value.lineColor
 }
-// 1.html parity: per-level padding (vertical, horizontal) from
-// getNodeStyle() (1.html JS L332-338).  Root=14/32, L1=10/20,
-// L2=7/14, L3=5/12.
-const NODE_PADS = [
-  { v: 14, h: 32, r: 28 },
-  { v: 10, h: 20, r: 10 },
-  { v: 7,  h: 14, r: 6  },
-  { v: 5,  h: 12, r: 5  },
-]
-function nodePadV(n: LayoutNode): number {
-  return NODE_PADS[Math.min(3, n.depth)]?.v ?? 5
-}
-function nodePadH(n: LayoutNode): number {
-  return NODE_PADS[Math.min(3, n.depth)]?.h ?? 12
-}
-function nodeRadius(n: LayoutNode): number {
-  return NODE_PADS[Math.min(3, n.depth)]?.r ?? 5
+function nodeFontWeight(n: LayoutNode): number {
+  const s = getNodeStyle(n.id)
+  return s.fontWeight ?? (n.isRoot ? 600 : 400)
 }
 
 function hexWithAlpha(hex: string, alpha: number): string {
@@ -927,9 +932,6 @@ watch(
           :data-node-id="n.id"
           :class="{
             'is-root': n.isRoot,
-            'lvl-1': !n.isRoot && n.depth === 1,
-            'lvl-2': n.depth === 2,
-            'lvl-3': n.depth >= 3,
             'is-selected': selectedId === n.id,
             'is-editing': editingId === n.id,
           }"
@@ -939,15 +941,10 @@ watch(
             minWidth: n.width + 'px',
             height: n.height + 'px',
             fontSize: n.fontSize + 'px',
-            // 1.html parity: padding from getNodeStyle() — root uses
-            // 14/32, L1 uses 10/20, L2 uses 7/14, L3 uses 5/12.
-            padding: `${nodePadV(n)}px ${nodePadH(n)}px`,
-            // 1.html: per-level border-radius (root=28, L1=10, L2=6, L3=5).
-            borderRadius: nodeRadius(n) + 'px',
-            // 1.html rainbow: each L1+ node gets its branch's color
-            // injected as --branch-color; the CSS class picks it up
-            // for the colored border-left.
-            '--branch-color': nodeBranchColor(n),
+            background: nodeBg(n),
+            color: nodeFg(n),
+            borderColor: nodeBorder(n),
+            fontWeight: nodeFontWeight(n),
             // 1.html centering trick: position the box by its center
             // (x,y) and let the browser center it via transform.
             // The manual drag offset is added to the -50%/-50% to
@@ -1136,15 +1133,10 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  /* padding is set per-level via inline style (1.html parity) */
+  padding: 0 1.6em;
   box-sizing: border-box;
-  /* border-radius is set per-level inline — root=28 (pill),
-     L1=10, L2=6, L3=5 (1.html CSS L80, L88, L96, L103). */
   border-radius: 8px;
-  /* 1.html CSS L88: L1 uses a 3.5px colored border-left.  L2 uses
-     2.5px.  L3 uses 2px.  Root uses a different border (gradient).
-     We set a fallback 1px solid here and override per-level. */
-  border: 1px solid transparent;
+  border: 1px solid;
   line-height: 1.2;
   cursor: move;
   transition: box-shadow 0.15s, transform 0.05s;
@@ -1156,41 +1148,8 @@ watch(
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 2;
 }
-/* Root node — 1.html CSS L77-82.  Pill shape (radius = half-height),
-   orange gradient background, white text, bold, 14px vertical
-   padding for a chunky title look. */
 .zm-node.is-root {
-  background: linear-gradient(135deg, #FF6B35, #F7931E);
-  color: #fff;
-  font-weight: 700;
-  box-shadow: 0 6px 28px rgba(255, 107, 53, 0.35);
-  border: none;
-}
-/* L1 — 1.html CSS L84-89.  Dark bg, 3.5px colored left border (the
-   branch color).  We inject --branch-color via the inline style and
-   the border-left picks it up here. */
-.zm-node.lvl-1 {
-  background: var(--bg-node, #1C1C2E);
-  color: var(--text, #E4E4ED);
-  border-left: 3.5px solid var(--branch-color, #FF6B35);
-}
-.zm-node.lvl-1:hover {
-  background: #24243A;
-}
-/* L2 — 1.html CSS L93-97.  Lighter, 2.5px colored left border. */
-.zm-node.lvl-2 {
-  background: rgba(28, 28, 46, 0.65);
-  color: #C0C0D4;
-  border-left: 2.5px solid var(--branch-color, #FF6B35);
-}
-.zm-node.lvl-2:hover {
-  background: rgba(36, 36, 58, 0.8);
-}
-/* L3+ — 1.html CSS L100-104. */
-.zm-node.lvl-3 {
-  background: rgba(28, 28, 46, 0.4);
-  color: #A0A0B8;
-  border-left: 2px solid var(--branch-color, #FF6B35);
+  font-weight: 600;
 }
 .zm-node.is-selected {
   outline: 2px solid #3b82f6;
@@ -1225,15 +1184,9 @@ watch(
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  /* 1.html always shows the collapse button.  Only the add/delete
-     buttons are hidden until hover. */
   opacity: 0;
   transition: opacity 0.15s, transform 0.15s;
   z-index: 4;
-}
-.zm-btn.zm-collapse {
-  /* override the hidden-by-default behavior for collapse */
-  opacity: 1;
 }
 .zm-node:hover .zm-btn,
 .zm-node.is-selected .zm-btn {
@@ -1251,23 +1204,12 @@ watch(
   transform: translateY(-50%) scale(1.15);
 }
 .zm-collapse {
-  /* 1.html CSS L122: .collapse-btn.right-side  sits flush with the
-     right edge of the node, vertically centered. */
-  right: -22px;
+  left: -8px;
   top: 50%;
   transform: translateY(-50%);
   background: #64748b;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1.5px solid var(--border, #2A2A40);
-  color: var(--text-dim, #7878A0);
-  font-size: 10px;
 }
 .zm-collapse:hover {
-  border-color: var(--accent, #FF6B35);
-  color: var(--accent, #FF6B35);
-  background: #1a1a2e;
   transform: translateY(-50%) scale(1.15);
 }
 .zm-del {
