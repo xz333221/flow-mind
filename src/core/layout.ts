@@ -33,6 +33,13 @@ export interface LayoutNode {
    * (org mode).
    */
   _dir: 'right' | 'left' | 'down'
+  /** Direction the node itself points AWAY from its parent, as a
+   *  signed scalar (1 = right, -1 = left).  Mirrors `_dir` for
+   *  callers that need a number, not a string.  Used by the canvas
+   *  line anchor so it follows the actual layout split — which can
+   *  differ from the build-time `side` if the height-based balancer
+   *  moves a child across the center line. */
+  _dirRight: 1 | -1
   /** Layout-only: vertical extent of this node's subtree (post-order
    *  walk result, read by layoutHorizontal).  Not for public use. */
   _subtreeH: number
@@ -180,10 +187,33 @@ export function layout(
 // =====================================================================
 function applyDoLayout(root: LayoutNode, mode: LayoutMode): void {
   if (mode === 'mindmap') {
-    const rightKids = root.children.slice(0, Math.ceil(root.children.length / 2))
-    const leftKids = root.children.slice(Math.ceil(root.children.length / 2))
-    for (const c of rightKids) c._dir = 'right'
-    for (const c of leftKids) c._dir = 'left'
+    // Split root's children by subtree HEIGHT, not by child count.
+    // The old code did `slice(0, ceil(n/2))` which is fine when every
+    // child has the same subtree height, but with a "4 leaves on the
+    // left, 4 deep subtrees on the right" mix the right side ends up
+    // much taller and the canvas gets lopsided.
+    //
+    // Greedy two-pointer split: walk the children in order and put
+    // each one on the lighter side.  Preserves sibling order on both
+    // sides.  Ties go to the right so a perfectly-symmetric input
+    // still looks balanced (first half = right, second half = left).
+    const kids = root.children
+    const rightKids: LayoutNode[] = []
+    const leftKids: LayoutNode[] = []
+    let rightH = 0
+    let leftH = 0
+    for (const c of kids) {
+      const h = c._subtreeH
+      if (rightH <= leftH) {
+        rightKids.push(c)
+        rightH += h
+      } else {
+        leftKids.push(c)
+        leftH += h
+      }
+    }
+    for (const c of rightKids) { c._dir = 'right'; c._dirRight = 1 }
+    for (const c of leftKids) { c._dir = 'left'; c._dirRight = -1 }
     // layoutHorizontal takes (node, dir) and walks node.children —
     // it can't be called twice on the same parent with different
     // dirs (the second call would stomp the first's _dir).  So we
@@ -208,9 +238,10 @@ function applyDoLayout(root: LayoutNode, mode: LayoutMode): void {
     const forceRight = (n: LayoutNode) => {
       n.side = 1
       n._dir = 'right'
+      n._dirRight = 1
       for (const c of n.children) forceRight(c)
     }
-    for (const c of root.children) c._dir = 'right'
+    for (const c of root.children) { c._dir = 'right'; c._dirRight = 1 }
     layoutHorizontal(root, 'right', H_GAP)
     forceRight(root)
   } else {
@@ -294,6 +325,10 @@ function buildLayout(
     collapsed: node.collapsed,
     side,
     _dir: dir,
+    // Default _dirRight to the build-time `side` for everyone; the
+    // mindmap balancer and tree-mode forceRight overwrite it later
+    // if needed.
+    _dirRight: side as 1 | -1,
     _subtreeH: size.h,
     _subtreeW: size.w,
     children: [],

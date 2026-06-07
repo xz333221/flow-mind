@@ -773,11 +773,14 @@ function lineAnchor(
     if (side === 'out') return { x: p.x, y: p.y + n.height / 2 }
     return { x: p.x, y: p.y - n.height / 2 }
   }
-  // Horizontal (mindmap / tree): line lands on left/right mid-edge
+  // Horizontal (mindmap / tree): line lands on left/right mid-edge.
+  // Prefer `_dirRight` (the actual layout split, possibly different
+  // from the build-time `side` after the height-based balancer moves
+  // a child across the center line) over the build-time `side`.
   let d: 1 | -1
-  if (side === 'in') d = (-n.side) as 1 | -1
+  if (side === 'in') d = (-n._dirRight) as 1 | -1
   else if (dir !== undefined) d = dir
-  else d = n.side
+  else d = n._dirRight
   return { x: p.x + d * (n.width / 2), y: p.y }
 }
 
