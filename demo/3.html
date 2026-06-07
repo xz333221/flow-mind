@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XMind 风格彩虹思维导图</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+        }
+        #mindmap-container {
+            width: 100%;
+            height: 100%;
+        }
+        .toolbar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 10px;
+            z-index: 10;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background-color: #f0f0f0;
+            color: #333;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover { background-color: #e0e0e0; }
+        button:disabled {
+            background-color: #fafafa;
+            color: #bbb;
+            cursor: not-allowed;
+        }
+        button.primary { background-color: #1982c4; color: white; }
+        button.primary:hover { background-color: #156da1; }
+        button.danger { background-color: #ff595e; color: white; }
+        button.danger:hover { background-color: #d9494e; }
+        
+        /* 禁止文字被选中以优化拖拽体验 */
+        text {
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <button id="btnAddChild" class="primary" disabled>+ 添加子节点</button>
+        <button id="btnAddSibling" disabled>+ 添加同级节点</button>
+        <button id="btnDelete" class="danger" disabled>删除节点</button>
+    </div>
+
+    <div id="mindmap-container"></div>
+
+    <script>
+        // 初始数据
+        let rootData = {
+            id: 'root',
+            name: '中心主题',
+            children: [
+                { id: 'node_1', name: '需求分析', children: [{id: 'node_1_1', name: '用户调研'}] },
+                { id: 'node_2', name: '技术选型', children: [{id: 'node_2_1', name: '前端框架'}, {id: 'node_2_2', name: '构建工具'}] },
+                { id: 'node_3', name: '系统架构' },
+                { id: 'node_4', name: 'UI 设计' },
+                { id: 'node_5', name: '项目排期' },
+                { id: 'node_6', name: '测试发布' }
+            ]
+        };
+
+        const rainbowColors = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93', '#F57C00', '#009688', '#E91E63'];
+        let selectedNodeId = 'root';
+
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const nodeWidth = 140; // 子节点下划线宽度
+
+        const svg = d3.select("#mindmap-container").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        const g = svg.append("g");
+
+        // 缩放控制
+        const zoom = d3.zoom().scaleExtent([0.3, 3]).on("zoom", (e) => {
+            g.attr("transform", e.transform);
+        });
+        svg.call(zoom);
+        svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2));
+
+        // 递归分配颜色
+        function assignColors(node, colorIndex) {
+            if (node.id === 'root') {
+                node.color = '#333';
+                (node.children || []).forEach((c, i) => assignColors(c, i));
+            } else {
+                node.color = rainbowColors[colorIndex % rainbowColors.length];
+                (node.children || []).forEach(c => assignColors(c, colorIndex));
+            }
+        }
+
+        // 获取层级对应线条粗细 (实现夸张的粗到细效果)
+        function getThickness(depth) {
+            if (depth === 0) return 22; // 中心原点发出时非常粗
+            if (depth === 1) return 6;  // 一级节点下划线
+            if (depth === 2) return 3;  // 二级节点下划线
+            return 1.5;                 // 三级及以上下划线
+        }
+
+        function update() {
+            g.selectAll("*").remove(); 
+            assignColors(rootData, 0);
+
+            // 分开左右两棵树，实现平衡布局
+            const leftChildren = [];
+            const rightChildren = [];
+            (rootData.children || []).forEach((child, i) => {
+                if (i % 2 === 0) rightChildren.push(child);
+                else leftChildren.push(child);
+            });
+
+            const rightRoot = d3.hierarchy({ ...rootData, children: rightChildren });
+            const leftRoot = d3.hierarchy({ ...rootData, children: leftChildren });
+
+            // 布局：高度间距 55，水平距离 200 (提供充足的贝塞尔曲线过渡空间)
+            const treeLayout = d3.tree().nodeSize([55, 200]);
+            treeLayout(rightRoot);
+            treeLayout(leftRoot);
+
+            const nodes = [];
+            const links = [];
+
+            // 根节点入栈 (方向标记为 0)
+            const rootVisual = rightRoot;
+            rootVisual.direction = 0;
+            nodes.push(rootVisual);
+
+            // 右侧树
+            rightRoot.each(d => {
+                d.direction = 1;
+                if (d.depth > 0) nodes.push(d);
+            });
+            rightRoot.links().forEach(l => { l.direction = 1; links.push(l); });
+
+            // 左侧树 (水平坐标取反)
+            leftRoot.each(d => {
+                d.direction = -1;
+                d.y = -d.y; 
+                if (d.depth > 0) nodes.push(d);
+            });
+            leftRoot.links().forEach(l => { l.direction = -1; links.push(l); });
+
+            // 1. 绘制连线及下划线 (使用一体化的多边形路径)
+            g.selectAll(".link")
+                .data(links, d => d.target.data.id)
+                .enter().append("path")
+                .attr("class", "link")
+                .attr("fill", d => d.target.data.color)
+                .attr("d", d => {
+                    const s = d.source;
+                    const t = d.target;
+                    const dir = d.direction; // 1 (右) 或 -1 (左)
+                    
+                    const w_s = getThickness(s.depth);
+                    const w_t = getThickness(t.depth);
+
+                    // XMind 的线条：如果是根节点，线条直接从 (0,0) 的正中心出发
+                    // 如果是普通节点，线条从父级下划线的末端出发
+                    const startX = s.depth === 0 ? 0 : s.y + dir * nodeWidth;
+                    const startY = s.x;
+                    const endX = t.y;
+                    const endY = t.x;
+
+                    const cpX = startX + (endX - startX) * 0.5; // 控制点，实现平滑 S 曲线
+
+                    // 构建 SVG 闭合图形：顶部曲线 -> 子节点下划线 -> 底部曲线拉回
+                    return `
+                        M ${startX} ${startY - w_s/2}
+                        C ${cpX} ${startY - w_s/2}, ${cpX} ${endY - w_t/2}, ${endX} ${endY - w_t/2}
+                        L ${endX + dir * nodeWidth} ${endY - w_t/2}
+                        L ${endX + dir * nodeWidth} ${endY + w_t/2}
+                        L ${endX} ${endY + w_t/2}
+                        C ${cpX} ${endY + w_t/2}, ${cpX} ${startY + w_s/2}, ${startX} ${startY + w_s/2}
+                        Z
+                    `;
+                });
+
+            // 2. 绘制节点 (后绘制，从而让中心节点能盖住原点凌乱的线条交界处)
+            const nodeElements = g.selectAll(".node")
+                .data(nodes, d => d.data.id)
+                .enter().append("g")
+                .attr("class", "node")
+                // 将组的坐标轴挪到节点的起始点
+                .attr("transform", d => `translate(${d.y},${d.x})`)
+                .on("click", (event, d) => {
+                    event.stopPropagation();
+                    selectedNodeId = d.data.id;
+                    updateUI();
+                });
+
+            // 背景 & 点击感应区
+            nodeElements.append("rect")
+                .attr("class", "bg")
+                .attr("x", d => d.depth === 0 ? -70 : (d.direction === 1 ? 0 : -nodeWidth))
+                .attr("y", d => d.depth === 0 ? -22 : -28)
+                .attr("width", d => d.depth === 0 ? 140 : nodeWidth)
+                .attr("height", d => d.depth === 0 ? 44 : 36)
+                .attr("rx", d => d.depth === 0 ? 10 : 4) // 中心节点是圆角矩形
+                .attr("fill", d => d.depth === 0 ? "#ffffff" : "transparent") // 子节点透明
+                .attr("stroke", d => {
+                    if (d.data.id === selectedNodeId) return "#1982C4";
+                    return d.depth === 0 ? "#333" : "none";
+                })
+                .attr("stroke-width", d => d.data.id === selectedNodeId ? 2 : (d.depth === 0 ? 2 : 0))
+                .style("cursor", "pointer");
+
+            // 节点文字
+            nodeElements.append("text")
+                // 中心主题垂直居中，子节点贴在下划线上方 (dy = -8)
+                .attr("dy", d => d.depth === 0 ? 6 : -8)
+                // 子节点文本沿下划线向内缩进 5px
+                .attr("dx", d => d.depth === 0 ? 0 : (d.direction === 1 ? 5 : -5))
+                // 右侧树文本向右写，左侧树向左写
+                .attr("text-anchor", d => d.depth === 0 ? "middle" : (d.direction === 1 ? "start" : "end"))
+                .text(d => d.data.name)
+                .attr("fill", "#333")
+                .style("font-size", d => d.depth === 0 ? "18px" : "15px")
+                .style("font-weight", d => d.depth === 0 ? "bold" : "normal")
+                .style("pointer-events", "none");
+
+            updateUI();
+        }
+
+        // 取消选择
+        svg.on("click", () => {
+            selectedNodeId = null;
+            updateUI();
+        });
+
+        // 递归查找节点和父节点
+        function findNodeAndParent(node, id, parent = null) {
+            if (node.id === id) return { node, parent };
+            if (node.children) {
+                for (let i = 0; i < node.children.length; i++) {
+                    const result = findNodeAndParent(node.children[i], id, node);
+                    if (result) return result;
+                }
+            }
+            return null;
+        }
+
+        // 仅更新交互层 UI (提升性能)
+        function updateUI() {
+            const btnAddChild = document.getElementById("btnAddChild");
+            const btnAddSibling = document.getElementById("btnAddSibling");
+            const btnDelete = document.getElementById("btnDelete");
+
+            if (selectedNodeId) {
+                btnAddChild.disabled = false;
+                btnAddSibling.disabled = selectedNodeId === 'root';
+                btnDelete.disabled = selectedNodeId === 'root';
+            } else {
+                btnAddChild.disabled = true;
+                btnAddSibling.disabled = true;
+                btnDelete.disabled = true;
+            }
+
+            // 更新选中状态的高亮框
+            g.selectAll(".node .bg")
+                .attr("stroke", d => {
+                    if (d.data.id === selectedNodeId) return "#1982C4";
+                    return d.depth === 0 ? "#333" : "none";
+                })
+                .attr("stroke-width", d => d.data.id === selectedNodeId ? 2 : (d.depth === 0 ? 2 : 0))
+                .style("fill", d => {
+                    if (d.data.id === selectedNodeId && d.depth > 0) return "rgba(25, 130, 196, 0.08)";
+                    return d.depth === 0 ? "#fff" : "transparent";
+                });
+        }
+
+        // 绑定按钮事件
+        document.getElementById("btnAddChild").addEventListener("click", () => {
+            if (!selectedNodeId) return;
+            const text = prompt("请输入子节点名称:", "新节点");
+            if (!text) return;
+
+            const { node } = findNodeAndParent(rootData, selectedNodeId);
+            if (!node.children) node.children = [];
+            node.children.push({ id: 'node_' + Date.now(), name: text });
+            update();
+        });
+
+        document.getElementById("btnAddSibling").addEventListener("click", () => {
+            if (!selectedNodeId || selectedNodeId === 'root') return;
+            const text = prompt("请输入同级节点名称:", "新节点");
+            if (!text) return;
+
+            const { parent } = findNodeAndParent(rootData, selectedNodeId);
+            parent.children.push({ id: 'node_' + Date.now(), name: text });
+            update();
+        });
+
+        document.getElementById("btnDelete").addEventListener("click", () => {
+            if (!selectedNodeId || selectedNodeId === 'root') return;
+            if (!confirm("确定要删除此节点及其所有子节点吗？")) return;
+
+            const { node, parent } = findNodeAndParent(rootData, selectedNodeId);
+            parent.children = parent.children.filter(c => c.id !== node.id);
+            if (parent.children.length === 0) delete parent.children;
+            
+            selectedNodeId = parent.id;
+            update();
+        });
+
+        update();
+    </script>
+</body>
+</html>

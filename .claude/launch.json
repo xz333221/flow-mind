@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "flow-mind",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "7852", "--strictPort"],
+      "port": 7852
+    }
+  ]
+}

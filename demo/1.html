@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindFlow - 思维导图</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+<style>
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg: #0D0D14;
+  --bg-canvas: #101018;
+  --bg-toolbar: #16161F;
+  --bg-node: #1C1C2E;
+  --bg-node-hover: #24243A;
+  --text: #E4E4ED;
+  --text-dim: #7878A0;
+  --accent: #FF6B35;
+  --accent2: #F7931E;
+  --border: #2A2A40;
+  --selection: rgba(255,107,53,0.25);
+  --glass: rgba(28,28,46,0.85);
+}
+html, body { width:100%; height:100%; overflow:hidden; font-family:'Noto Sans SC',sans-serif; background:var(--bg); color:var(--text); }
+
+/* ===== 工具栏 ===== */
+.toolbar {
+  position:fixed; top:0; left:0; right:0; height:48px; z-index:100;
+  background:var(--bg-toolbar); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; padding:0 16px; gap:6px;
+  backdrop-filter:blur(12px);
+}
+.toolbar .brand { font-weight:900; font-size:16px; letter-spacing:1px; margin-right:20px; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.toolbar .sep { width:1px; height:24px; background:var(--border); margin:0 8px; }
+.tb-btn {
+  display:flex; align-items:center; gap:5px; padding:6px 12px; border:none; border-radius:6px;
+  background:transparent; color:var(--text-dim); font-size:13px; cursor:pointer;
+  font-family:inherit; transition:all .2s;
+}
+.tb-btn i { font-size:16px; }
+.tb-btn:hover { background:rgba(255,255,255,0.06); color:var(--text); }
+.tb-btn.active { background:var(--selection); color:var(--accent); }
+.tb-btn:disabled { opacity:.35; pointer-events:none; }
+.zoom-display { font-size:12px; color:var(--text-dim); min-width:42px; text-align:center; user-select:none; }
+
+/* ===== 画布 ===== */
+.canvas-wrap {
+  position:fixed; top:48px; left:0; right:0; bottom:0; overflow:hidden;
+  background:var(--bg-canvas);
+  background-image: radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.canvas-content {
+  position:absolute; left:50%; top:50%; transform-origin:0 0;
+  will-change:transform;
+}
+.connections-svg {
+  position:absolute; overflow:visible; pointer-events:none;
+  left:0; top:0; width:0; height:0;
+}
+.connections-svg path {
+  fill:none; stroke-linecap:round; transition:d .35s ease, opacity .3s;
+}
+
+/* ===== 节点 ===== */
+.mind-node {
+  position:absolute; display:flex; align-items:center; border-radius:8px;
+  cursor:pointer; transition:box-shadow .2s, filter .2s;
+  user-select:none; white-space:nowrap;
+  transform:translate(-50%,-50%);
+}
+.mind-node:hover { filter:brightness(1.15); }
+.mind-node.selected { box-shadow:0 0 0 2.5px var(--accent), 0 4px 24px rgba(255,107,53,0.3) !important; }
+
+/* 根节点 */
+.mind-node.root-node {
+  font-size:17px; font-weight:700; padding:14px 32px; border-radius:28px;
+  background:linear-gradient(135deg,#FF6B35,#F7931E); color:#fff;
+  box-shadow:0 6px 28px rgba(255,107,53,0.35);
+  letter-spacing:.5px;
+}
+/* 一级节点 */
+.mind-node.level-1 {
+  font-size:14px; font-weight:500; padding:10px 20px; border-radius:10px;
+  background:var(--bg-node); color:var(--text);
+  box-shadow:0 2px 12px rgba(0,0,0,0.25);
+  border-left:3.5px solid var(--branch-color,var(--accent));
+}
+.mind-node.level-1:hover { background:var(--bg-node-hover); }
+
+/* 二级及更深 */
+.mind-node.level-2 {
+  font-size:13px; font-weight:400; padding:7px 14px; border-radius:6px;
+  background:rgba(28,28,46,0.65); color:#C0C0D4;
+  border-left:2.5px solid var(--branch-color,var(--accent));
+}
+.mind-node.level-2:hover { background:rgba(36,36,58,0.8); }
+
+.mind-node.level-3 {
+  font-size:12px; font-weight:300; padding:5px 12px; border-radius:5px;
+  background:rgba(28,28,46,0.4); color:#A0A0B8;
+  border-left:2px solid var(--branch-color,var(--accent));
+}
+
+/* 节点文本编辑 */
+.node-text { outline:none; min-width:20px; }
+.node-text[contenteditable="true"] {
+  background:rgba(255,255,255,0.08); border-radius:4px; padding:1px 4px; margin:-1px -4px;
+  cursor:text; min-width:40px;
+}
+
+/* 折叠按钮 */
+.collapse-btn {
+  position:absolute; width:18px; height:18px; border-radius:50%;
+  background:var(--bg-node); border:1.5px solid var(--border);
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; color:var(--text-dim); cursor:pointer;
+  transition:all .2s; z-index:2;
+}
+.collapse-btn:hover { border-color:var(--accent); color:var(--accent); background:#1a1a2e; }
+.collapse-btn.right-side { right:-24px; top:50%; transform:translateY(-50%); }
+.collapse-btn.left-side  { left:-24px; top:50%; transform:translateY(-50%); }
+.collapse-btn.bottom-side { bottom:-22px; left:50%; transform:translateX(-50%); }
+
+/* 子节点数量标记 */
+.collapse-count {
+  font-size:9px; margin-left:2px; opacity:.5;
+}
+
+/* ===== 右键菜单 ===== */
+.ctx-menu {
+  position:fixed; z-index:200; min-width:180px; padding:6px 0;
+  background:rgba(22,22,31,0.95); border:1px solid var(--border);
+  border-radius:10px; backdrop-filter:blur(16px);
+  box-shadow:0 8px 32px rgba(0,0,0,0.5);
+  display:none; animation:ctxIn .15s ease;
+}
+@keyframes ctxIn { from { opacity:0; transform:scale(.95) translateY(-4px); } to { opacity:1; transform:none; } }
+.ctx-item {
+  display:flex; align-items:center; gap:10px; padding:8px 16px;
+  font-size:13px; color:var(--text); cursor:pointer; transition:background .15s;
+}
+.ctx-item i { font-size:15px; color:var(--text-dim); width:18px; text-align:center; }
+.ctx-item:hover { background:rgba(255,255,255,0.06); }
+.ctx-item.danger { color:#E63946; }
+.ctx-item.danger i { color:#E63946; }
+.ctx-sep { height:1px; background:var(--border); margin:4px 8px; }
+
+/* ===== Toast ===== */
+.toast-container { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:300; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.toast {
+  padding:8px 20px; border-radius:8px; font-size:13px;
+  background:rgba(22,22,31,0.92); border:1px solid var(--border);
+  backdrop-filter:blur(12px); color:var(--text);
+  animation:toastIn .3s ease, toastOut .3s ease 2s forwards;
+}
+@keyframes toastIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes toastOut { to { opacity:0; transform:translateY(-10px); } }
+
+/* ===== 快捷键提示 ===== */
+.shortcuts-panel {
+  position:fixed; bottom:16px; right:16px; z-index:100;
+  background:rgba(22,22,31,0.85); border:1px solid var(--border);
+  border-radius:10px; padding:14px 18px; backdrop-filter:blur(12px);
+  font-size:12px; color:var(--text-dim); line-height:1.9;
+  opacity:.6; transition:opacity .3s;
+}
+.shortcuts-panel:hover { opacity:1; }
+.shortcuts-panel kbd {
+  display:inline-block; padding:1px 6px; border-radius:4px;
+  background:rgba(255,255,255,0.08); border:1px solid var(--border);
+  font-family:inherit; font-size:11px; color:var(--text); margin:0 2px;
+}
+
+/* ===== 状态栏 ===== */
+.status-bar {
+  position:fixed; bottom:0; left:0; right:0; height:28px; z-index:90;
+  background:var(--bg-toolbar); border-top:1px solid var(--border);
+  display:flex; align-items:center; padding:0 16px; gap:20px;
+  font-size:11px; color:var(--text-dim);
+}
+
+/* 响应式 */
+@media (max-width:768px) {
+  .toolbar .tb-label { display:none; }
+  .shortcuts-panel { display:none; }
+}
+</style>
+</head>
+<body>
+
+<!-- 工具栏 -->
+<header class="toolbar">
+  <div class="brand">MindFlow</div>
+  <div class="sep"></div>
+  <button class="tb-btn" id="btnUndo" title="撤销 (Ctrl+Z)"><i class="ri-arrow-go-back-line"></i><span class="tb-label">撤销</span></button>
+  <button class="tb-btn" id="btnRedo" title="重做 (Ctrl+Y)"><i class="ri-arrow-go-forward-line"></i><span class="tb-label">重做</span></button>
+  <div class="sep"></div>
+  <button class="tb-btn active" id="btnLayoutMindmap" title="思维导图布局"><i class="ri-mind-map"></i><span class="tb-label">导图</span></button>
+  <button class="tb-btn" id="btnLayoutTree" title="树形布局"><i class="ri-node-tree"></i><span class="tb-label">树形</span></button>
+  <button class="tb-btn" id="btnLayoutOrg" title="组织结构布局"><i class="ri-organization-chart"></i><span class="tb-label">组织</span></button>
+  <div class="sep"></div>
+  <button class="tb-btn" id="btnAddChild" title="添加子节点 (Tab)"><i class="ri-add-circle-line"></i><span class="tb-label">子节点</span></button>
+  <button class="tb-btn" id="btnAddSibling" title="添加同级节点 (Enter)"><i class="ri-add-line"></i><span class="tb-label">同级</span></button>
+  <button class="tb-btn" id="btnDelete" title="删除 (Delete)"><i class="ri-delete-bin-6-line"></i><span class="tb-label">删除</span></button>
+  <div class="sep"></div>
+  <button class="tb-btn" id="btnZoomOut" title="缩小"><i class="ri-subtract-line"></i></button>
+  <span class="zoom-display" id="zoomDisplay">100%</span>
+  <button class="tb-btn" id="btnZoomIn" title="放大"><i class="ri-add-line"></i></button>
+  <button class="tb-btn" id="btnFit" title="适应屏幕"><i class="ri-fullscreen-line"></i></button>
+  <div style="flex:1"></div>
+  <button class="tb-btn" id="btnShortcuts" title="快捷键"><i class="ri-keyboard-line"></i></button>
+</header>
+
+<!-- 画布区域 -->
+<div class="canvas-wrap" id="canvasWrap">
+  <div class="canvas-content" id="canvasContent">
+    <svg class="connections-svg" id="svgLayer"></svg>
+    <div id="nodesLayer"></div>
+  </div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="ctx-menu" id="ctxMenu">
+  <div class="ctx-item" data-action="addChild"><i class="ri-add-circle-line"></i>添加子节点</div>
+  <div class="ctx-item" data-action="addSibling"><i class="ri-add-line"></i>添加同级节点</div>
+  <div class="ctx-item" data-action="edit"><i class="ri-edit-line"></i>编辑文本</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" data-action="toggleCollapse"><i class="ri-arrow-down-s-line"></i>折叠/展开</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" data-action="delete"><i class="ri-delete-bin-6-line"></i>删除节点</div>
+</div>
+
+<!-- 快捷键提示 -->
+<div class="shortcuts-panel" id="shortcutsPanel">
+  <div><kbd>Tab</kbd> 添加子节点</div>
+  <div><kbd>Enter</kbd> 添加同级节点</div>
+  <div><kbd>Delete</kbd> 删除节点</div>
+  <div><kbd>F2</kbd> / 双击 编辑</div>
+  <div><kbd>Space</kbd> 折叠/展开</div>
+  <div><kbd>Ctrl+Z</kbd> 撤销</div>
+  <div><kbd>Ctrl+Y</kbd> 重做</div>
+  <div>滚轮缩放 / 拖拽平移</div>
+</div>
+
+<!-- 状态栏 -->
+<div class="status-bar">
+  <span id="statusNodes">节点: 0</span>
+  <span id="statusZoom">缩放: 100%</span>
+  <span id="statusLayout">布局: 导图</span>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+/* ========================================================
+   MindFlow - 仿 XMind 思维导图
+   ======================================================== */
+
+// ========== 配置常量 ==========
+const BRANCH_COLORS = [
+  '#FF6B35','#2EC4B6','#E63946','#FFB703',
+  '#44AF69','#4CC9F0','#F72585','#FB8500'
+];
+const H_GAP_MAP = { mindmap: 70, tree: 60, org: 30 };
+const V_GAP = 10;
+const MIN_ZOOM = 0.2, MAX_ZOOM = 3;
+
+// ========== 全局状态 ==========
+let data = null;              // 思维导图数据（树形结构）
+let selectedId = null;        // 当前选中节点 ID
+let editingId = null;         // 当前正在编辑的节点 ID
+let panX = 0, panY = 0, zoom = 1;
+let isDragging = false, dragStartX = 0, dragStartY = 0, dragStartPanX = 0, dragStartPanY = 0;
+let layoutMode = 'mindmap';   // 'mindmap' | 'tree' | 'org'
+let historyStack = [], historyIndex = -1;
+let nodeElementMap = {};      // id -> DOM 元素映射
+
+// ========== DOM 引用 ==========
+const canvasWrap = document.getElementById('canvasWrap');
+const canvasContent = document.getElementById('canvasContent');
+const svgLayer = document.getElementById('svgLayer');
+const nodesLayer = document.getElementById('nodesLayer');
+const ctxMenu = document.getElementById('ctxMenu');
+const toastContainer = document.getElementById('toastContainer');
+
+// ========== 工具函数 ==========
+function uid() { return 'n' + Math.random().toString(36).substr(2, 9); }
+
+/** 在树中查找节点 */
+function findNode(node, id) {
+  if (node.id === id) return node;
+  if (node.children) {
+    for (const c of node.children) {
+      const found = findNode(c, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** 查找父节点 */
+function findParent(node, id, parent) {
+  if (node.id === id) return parent;
+  if (node.children) {
+    for (const c of node.children) {
+      const found = findParent(c, id, node);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** 深拷贝数据 */
+function cloneData(node) {
+  return {
+    id: node.id, text: node.text, collapsed: node.collapsed || false,
+    direction: node.direction,
+    children: (node.children || []).map(c => cloneData(c))
+  };
+}
+
+/** 用 Canvas 测量文本宽度 */
+const _measureCanvas = document.createElement('canvas').getContext('2d');
+function measureText(text, fontSize, fontWeight) {
+  _measureCanvas.font = `${fontWeight || 500} ${fontSize}px "Noto Sans SC", sans-serif`;
+  return _measureCanvas.measureText(text).width;
+}
+
+/** 获取节点视觉参数 */
+function getNodeStyle(node, level) {
+  if (level === 0) return { fontSize: 17, fontWeight: 700, padH: 32, padV: 14, minW: 100, h: 48, radius: 28 };
+  if (level === 1) return { fontSize: 14, fontWeight: 500, padH: 20, padV: 10, minW: 70, h: 38, radius: 10 };
+  if (level === 2) return { fontSize: 13, fontWeight: 400, padH: 14, padV: 7, minW: 50, h: 30, radius: 6 };
+  return { fontSize: 12, fontWeight: 300, padH: 12, padV: 5, minW: 40, h: 26, radius: 5 };
+}
+
+/** 计算节点尺寸 */
+function calcNodeSize(node, level) {
+  const s = getNodeStyle(node, level);
+  const tw = measureText(node.text, s.fontSize, s.fontWeight);
+  node._w = Math.max(s.minW, tw + s.padH * 2);
+  node._h = s.h;
+  node._level = level;
+  node._style = s;
+}
+
+/** Toast 提示 */
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  toastContainer.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+// ========== 布局算法 ==========
+/** 递归计算节点尺寸 */
+function calcAllSizes(node, level) {
+  calcNodeSize(node, level);
+  if (node.children && !node.collapsed) {
+    node.children.forEach(c => calcAllSizes(c, level + 1));
+  }
+}
+
+/** 计算子树高度（垂直方向占用的总高度） */
+function calcSubtreeH(node, dir) {
+  const isHoriz = (dir === 'left' || dir === 'right');
+  if (!node.children || node.children.length === 0 || node.collapsed) {
+    node._subtreeH = isHoriz ? node._h : node._w;
+    return node._subtreeH;
+  }
+  let total = 0;
+  node.children.forEach((c, i) => {
+    total += calcSubtreeH(c, dir);
+    if (i > 0) total += V_GAP;
+  });
+  node._subtreeH = Math.max(isHoriz ? node._h : node._w, total);
+  return node._subtreeH;
+}
+
+/** 计算子树宽度（水平布局时用于组织结构图） */
+function calcSubtreeW(node) {
+  if (!node.children || node.children.length === 0 || node.collapsed) {
+    node._subtreeW = node._w;
+    return node._subtreeW;
+  }
+  let total = 0;
+  node.children.forEach((c, i) => {
+    total += calcSubtreeW(c);
+    if (i > 0) total += V_GAP * 2;
+  });
+  node._subtreeW = Math.max(node._w, total);
+  return node._subtreeW;
+}
+
+/** 布局子树 — 水平方向（左或右） */
+function layoutHorizontal(node, dir, hGap) {
+  if (!node.children || node.children.length === 0 || node.collapsed) return;
+  const totalH = node.children.reduce((s, c, i) => s + c._subtreeH + (i > 0 ? V_GAP : 0), 0);
+  let cy = node.y - totalH / 2;
+  node.children.forEach(child => {
+    child.x = node.x + (dir === 'right' ? 1 : -1) * (node._w / 2 + hGap + child._w / 2);
+    child.y = cy + child._subtreeH / 2;
+    child._dir = dir;
+    cy += child._subtreeH + V_GAP;
+    layoutHorizontal(child, dir, hGap);
+  });
+}
+
+/** 布局子树 — 垂直方向（向下） */
+function layoutVertical(node, vGap) {
+  if (!node.children || node.children.length === 0 || node.collapsed) return;
+  const totalW = node.children.reduce((s, c, i) => s + c._subtreeW + (i > 0 ? V_GAP * 2 : 0), 0);
+  let cx = node.x - totalW / 2;
+  node.children.forEach(child => {
+    child.x = cx + child._subtreeW / 2;
+    child.y = node.y + node._h / 2 + vGap + child._h / 2;
+    child._dir = 'down';
+    cx += child._subtreeW + V_GAP * 2;
+    layoutVertical(child, vGap);
+  });
+}
+
+/** 主布局函数 */
+function doLayout() {
+  if (!data) return;
+  calcAllSizes(data, 0);
+
+  data.x = 0; data.y = 0; data._dir = 'right';
+
+  if (layoutMode === 'mindmap') {
+    // 中心辐射：一级子节点左右分布
+    const rightKids = data.children.slice(0, Math.ceil(data.children.length / 2));
+    const leftKids  = data.children.slice(Math.ceil(data.children.length / 2));
+    const hGap = H_GAP_MAP.mindmap;
+
+    rightKids.forEach(c => calcSubtreeH(c, 'right'));
+    leftKids.forEach(c => calcSubtreeH(c, 'left'));
+
+    // 分配方向
+    rightKids.forEach(c => c._dir = 'right');
+    leftKids.forEach(c => c._dir = 'left');
+
+    // 右侧布局
+    if (rightKids.length > 0) {
+      const totalH = rightKids.reduce((s, c, i) => s + c._subtreeH + (i > 0 ? V_GAP : 0), 0);
+      let cy = -totalH / 2;
+      rightKids.forEach(child => {
+        child.x = data._w / 2 + hGap + child._w / 2;
+        child.y = cy + child._subtreeH / 2;
+        cy += child._subtreeH + V_GAP;
+        layoutHorizontal(child, 'right', hGap);
+      });
+    }
+    // 左侧布局
+    if (leftKids.length > 0) {
+      const totalH = leftKids.reduce((s, c, i) => s + c._subtreeH + (i > 0 ? V_GAP : 0), 0);
+      let cy = -totalH / 2;
+      leftKids.forEach(child => {
+        child.x = -(data._w / 2 + hGap + child._w / 2);
+        child.y = cy + child._subtreeH / 2;
+        cy += child._subtreeH + V_GAP;
+        layoutHorizontal(child, 'left', hGap);
+      });
+    }
+
+  } else if (layoutMode === 'tree') {
+    // 向右树形
+    const hGap = H_GAP_MAP.tree;
+    data.children.forEach(c => { c._dir = 'right'; calcSubtreeH(c, 'right'); });
+    if (data.children.length > 0) {
+      const totalH = data.children.reduce((s, c, i) => s + c._subtreeH + (i > 0 ? V_GAP : 0), 0);
+      let cy = -totalH / 2;
+      data.children.forEach(child => {
+        child.x = data._w / 2 + hGap + child._w / 2;
+        child.y = cy + child._subtreeH / 2;
+        cy += child._subtreeH + V_GAP;
+        layoutHorizontal(child, 'right', hGap);
+      });
+    }
+
+  } else if (layoutMode === 'org') {
+    // 组织结构图（向下）
+    data.children.forEach(c => { c._dir = 'down'; calcSubtreeW(c); });
+    layoutVertical(data, H_GAP_MAP.org);
+  }
+
+  // 分配分支颜色
+  assignBranchColors(data, 0);
+}
+
+/** 给一级子节点及其后代分配分支颜色 */
+function assignBranchColors(root, rootLevel) {
+  if (rootLevel === 0) {
+    root.children.forEach((child, i) => {
+      child._branchColor = BRANCH_COLORS[i % BRANCH_COLORS.length];
+      propagateBranchColor(child, child._branchColor);
+    });
+  }
+}
+function propagateBranchColor(node, color) {
+  node._branchColor = color;
+  if (node.children) node.children.forEach(c => propagateBranchColor(c, color));
+}
+
+// ========== 渲染 ==========
+function render() {
+  doLayout();
+  renderNodes(data);
+  renderConnections(data);
+  updateStatus();
+}
+
+/** 渲染所有节点 DOM */
+function renderNodes(root) {
+  nodesLayer.innerHTML = '';
+  nodeElementMap = {};
+  renderNodeRecursive(root, 0);
+}
+
+function renderNodeRecursive(node, level) {
+  const el = document.createElement('div');
+  el.className = 'mind-node ' + (level === 0 ? 'root-node' : `level-${Math.min(level, 3)}`);
+  el.dataset.id = node.id;
+
+  // 分支颜色
+  if (level > 0 && node._branchColor) {
+    el.style.setProperty('--branch-color', node._branchColor);
+  }
+
+  // 位置
+  el.style.left = node.x + 'px';
+  el.style.top = node.y + 'px';
+
+  // 选中状态
+  if (node.id === selectedId) el.classList.add('selected');
+
+  // 文本
+  const textSpan = document.createElement('span');
+  textSpan.className = 'node-text';
+  textSpan.textContent = node.text;
+  el.appendChild(textSpan);
+
+  // 折叠按钮
+  if (node.children && node.children.length > 0) {
+    const btn = document.createElement('div');
+    const dir = node._dir || 'right';
+    btn.className = 'collapse-btn ' + (dir === 'left' ? 'left-side' : dir === 'down' ? 'bottom-side' : 'right-side');
+    btn.innerHTML = node.collapsed
+      ? `<i class="ri-add-line" style="font-size:10px"></i>`
+      : `<i class="ri-subtract-line" style="font-size:10px"></i>`;
+    if (node.collapsed && node.children.length > 0) {
+      const countBadge = document.createElement('span');
+      countBadge.className = 'collapse-count';
+      countBadge.textContent = node.children.length;
+      // 在折叠按钮中显示数量
+    }
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleCollapse(node.id);
+    });
+    el.appendChild(btn);
+  }
+
+  // 事件
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (editingId !== node.id) selectNode(node.id);
+  });
+  el.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    startEdit(node.id);
+  });
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    selectNode(node.id);
+    showContextMenu(e.clientX, e.clientY, node.id);
+  });
+
+  nodesLayer.appendChild(el);
+  nodeElementMap[node.id] = el;
+
+  // 递归渲染子节点
+  if (node.children && !node.collapsed) {
+    node.children.forEach(c => renderNodeRecursive(c, level + 1));
+  }
+}
+
+/** 渲染所有连线 */
+function renderConnections(root) {
+  svgLayer.innerHTML = '';
+  renderConnectionsRecursive(root);
+}
+
+function renderConnectionsRecursive(node) {
+  if (!node.children || node.collapsed) return;
+  node.children.forEach(child => {
+    const path = createConnectionPath(node, child);
+    if (path) svgLayer.appendChild(path);
+    renderConnectionsRecursive(child);
+  });
+}
+
+function createConnectionPath(parent, child) {
+  const dir = child._dir || 'right';
+  const color = child._branchColor || 'rgba(255,255,255,0.15)';
+  let x1, y1, x2, y2;
+
+  if (dir === 'right') {
+    x1 = parent.x + parent._w / 2;
+    y1 = parent.y;
+    x2 = child.x - child._w / 2;
+    y2 = child.y;
+  } else if (dir === 'left') {
+    x1 = parent.x - parent._w / 2;
+    y1 = parent.y;
+    x2 = child.x + child._w / 2;
+    y2 = child.y;
+  } else {
+    x1 = parent.x;
+    y1 = parent.y + parent._h / 2;
+    x2 = child.x;
+    y2 = child.y - child._h / 2;
+  }
+
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  const dx = Math.abs(x2 - x1);
+  const dy = Math.abs(y2 - y1);
+
+  if (dir === 'right' || dir === 'left') {
+    const cpx = dx * 0.45;
+    const sign = dir === 'right' ? 1 : -1;
+    path.setAttribute('d', `M${x1},${y1} C${x1 + sign * cpx},${y1} ${x2 - sign * cpx},${y2} ${x2},${y2}`);
+  } else {
+    const cpy = dy * 0.45;
+    path.setAttribute('d', `M${x1},${y1} C${x1},${y1 + cpy} ${x2},${y2 - cpy} ${x2},${y2}`);
+  }
+
+  path.setAttribute('stroke', color);
+  path.setAttribute('stroke-width', parent._level === 0 ? '2.5' : '2');
+  path.setAttribute('opacity', '0.7');
+  return path;
+}
+
+// ========== 画布变换 ==========
+function updateTransform() {
+  canvasContent.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+  document.getElementById('zoomDisplay').textContent = Math.round(zoom * 100) + '%';
+  document.getElementById('statusZoom').textContent = '缩放: ' + Math.round(zoom * 100) + '%';
+}
+
+function zoomTo(newZoom, cx, cy) {
+  // 以 (cx, cy) 为中心缩放
+  if (cx === undefined) { cx = canvasWrap.clientWidth / 2; cy = canvasWrap.clientHeight / 2; }
+  newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+  panX = cx - (cx - panX) * (newZoom / zoom);
+  panY = cy - (cy - panY) * (newZoom / zoom);
+  zoom = newZoom;
+  updateTransform();
+}
+
+function fitToScreen() {
+  if (!data) return;
+  // 计算所有节点的边界
+  const bounds = getNodesBounds(data);
+  const wrapRect = canvasWrap.getBoundingClientRect();
+  const padX = 80, padY = 60;
+  const scaleX = (wrapRect.width - padX * 2) / (bounds.maxX - bounds.minX);
+  const scaleY = (wrapRect.height - padY * 2) / (bounds.maxY - bounds.minY);
+  const newZoom = Math.max(MIN_ZOOM, Math.min(1.2, Math.min(scaleX, scaleY)));
+  const centerX = (bounds.minX + bounds.maxX) / 2;
+  const centerY = (bounds.minY + bounds.maxY) / 2;
+  zoom = newZoom;
+  panX = -centerX * zoom;
+  panY = -centerY * zoom;
+  updateTransform();
+}
+
+function getNodesBounds(node) {
+  let minX = node.x - node._w / 2, maxX = node.x + node._w / 2;
+  let minY = node.y - node._h / 2, maxY = node.y + node._h / 2;
+  if (node.children && !node.collapsed) {
+    node.children.forEach(c => {
+      const cb = getNodesBounds(c);
+      minX = Math.min(minX, cb.minX); maxX = Math.max(maxX, cb.maxX);
+      minY = Math.min(minY, cb.minY); maxY = Math.max(maxY, cb.maxY);
+    });
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+// ========== 交互功能 ==========
+function selectNode(id) {
+  selectedId = id;
+  // 更新选中样式
+  document.querySelectorAll('.mind-node.selected').forEach(el => el.classList.remove('selected'));
+  if (id && nodeElementMap[id]) nodeElementMap[id].classList.add('selected');
+}
+
+function startEdit(id) {
+  const node = findNode(data, id);
+  if (!node) return;
+  editingId = id;
+  selectNode(id);
+  const el = nodeElementMap[id];
+  if (!el) return;
+  const textEl = el.querySelector('.node-text');
+  textEl.contentEditable = 'true';
+  textEl.focus();
+  // 选中所有文本
+  const range = document.createRange();
+  range.selectNodeContents(textEl);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  const finish = () => {
+    textEl.contentEditable = 'false';
+    const newText = textEl.textContent.trim();
+    if (newText && newText !== node.text) {
+      node.text = newText;
+      saveHistory();
+    }
+    editingId = null;
+    render();
+  };
+
+  textEl.addEventListener('blur', finish, { once: true });
+  textEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); textEl.blur(); }
+    if (e.key === 'Escape') { textEl.textContent = node.text; textEl.blur(); }
+    e.stopPropagation();
+  });
+}
+
+function addChild(parentId) {
+  const parent = findNode(data, parentId || selectedId);
+  if (!parent) return;
+  if (parent.collapsed) { parent.collapsed = false; }
+  if (!parent.children) parent.children = [];
+  const newNode = { id: uid(), text: '新主题', collapsed: false, children: [] };
+  parent.children.push(newNode);
+  saveHistory();
+  render();
+  // 自动编辑新节点
+  setTimeout(() => {
+    selectNode(newNode.id);
+    startEdit(newNode.id);
+  }, 50);
+}
+
+function addSibling(nodeId) {
+  if (!nodeId) nodeId = selectedId;
+  if (!nodeId || nodeId === data.id) { addChild(data.id); return; }
+  const parent = findParent(data, nodeId, null);
+  if (!parent) return;
+  const idx = parent.children.findIndex(c => c.id === nodeId);
+  const newNode = { id: uid(), text: '新主题', collapsed: false, children: [] };
+  parent.children.splice(idx + 1, 0, newNode);
+  saveHistory();
+  render();
+  setTimeout(() => {
+    selectNode(newNode.id);
+    startEdit(newNode.id);
+  }, 50);
+}
+
+function deleteNode(nodeId) {
+  if (!nodeId || nodeId === data.id) { showToast('无法删除根节点'); return; }
+  const parent = findParent(data, nodeId, null);
+  if (!parent) return;
+  const idx = parent.children.findIndex(c => c.id === nodeId);
+  parent.children.splice(idx, 1);
+  if (selectedId === nodeId) selectedId = parent.id;
+  saveHistory();
+  render();
+}
+
+function toggleCollapse(nodeId) {
+  const node = findNode(data, nodeId);
+  if (!node || !node.children || node.children.length === 0) return;
+  node.collapsed = !node.collapsed;
+  saveHistory();
+  render();
+  if (selectedId) selectNode(selectedId);
+}
+
+// ========== 右键菜单 ==========
+let ctxNodeId = null;
+function showContextMenu(x, y, nodeId) {
+  ctxNodeId = nodeId;
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top = y + 'px';
+  ctxMenu.style.display = 'block';
+  // 确保不超出屏幕
+  requestAnimationFrame(() => {
+    const rect = ctxMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) ctxMenu.style.left = (x - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) ctxMenu.style.top = (y - rect.height) + 'px';
+  });
+}
+function hideContextMenu() { ctxMenu.style.display = 'none'; ctxNodeId = null; }
+
+ctxMenu.addEventListener('click', (e) => {
+  const item = e.target.closest('.ctx-item');
+  if (!item) return;
+  const action = item.dataset.action;
+  if (action === 'addChild') addChild(ctxNodeId);
+  else if (action === 'addSibling') addSibling(ctxNodeId);
+  else if (action === 'edit') startEdit(ctxNodeId);
+  else if (action === 'delete') deleteNode(ctxNodeId);
+  else if (action === 'toggleCollapse') toggleCollapse(ctxNodeId);
+  hideContextMenu();
+});
+
+// ========== 撤销/重做 ==========
+function saveHistory() {
+  // 截断前进历史
+  historyStack = historyStack.slice(0, historyIndex + 1);
+  historyStack.push(cloneData(data));
+  historyIndex = historyStack.length - 1;
+  updateUndoRedoButtons();
+}
+
+function undo() {
+  if (historyIndex <= 0) return;
+  historyIndex--;
+  data = cloneData(historyStack[historyIndex]);
+  selectedId = null;
+  render();
+  updateUndoRedoButtons();
+}
+
+function redo() {
+  if (historyIndex >= historyStack.length - 1) return;
+  historyIndex++;
+  data = cloneData(historyStack[historyIndex]);
+  selectedId = null;
+  render();
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  document.getElementById('btnUndo').disabled = historyIndex <= 0;
+  document.getElementById('btnRedo').disabled = historyIndex >= historyStack.length - 1;
+}
+
+// ========== 状态栏 ==========
+function countNodes(node) {
+  let c = 1;
+  if (node.children) node.children.forEach(ch => c += countNodes(ch));
+  return c;
+}
+function updateStatus() {
+  document.getElementById('statusNodes').textContent = '节点: ' + countNodes(data);
+  const layoutNames = { mindmap: '导图', tree: '树形', org: '组织' };
+  document.getElementById('statusLayout').textContent = '布局: ' + (layoutNames[layoutMode] || layoutMode);
+}
+
+// ========== 事件绑定 ==========
+function initEvents() {
+  // 画布拖拽
+  canvasWrap.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    // 如果点击在节点上，不拖拽画布
+    if (e.target.closest('.mind-node')) return;
+    isDragging = true;
+    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragStartPanX = panX; dragStartPanY = panY;
+    canvasWrap.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    panX = dragStartPanX + (e.clientX - dragStartX);
+    panY = dragStartPanY + (e.clientY - dragStartY);
+    updateTransform();
+  });
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+    canvasWrap.style.cursor = '';
+  });
+
+  // 滚轮缩放
+  canvasWrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = canvasWrap.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? 0.92 : 1.08;
+    zoomTo(zoom * delta, cx, cy);
+  }, { passive: false });
+
+  // 点击空白取消选中
+  canvasWrap.addEventListener('click', (e) => {
+    if (!e.target.closest('.mind-node')) {
+      selectedId = null;
+      document.querySelectorAll('.mind-node.selected').forEach(el => el.classList.remove('selected'));
+    }
+  });
+
+  // 全局点击关闭右键菜单
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.ctx-menu')) hideContextMenu();
+  });
+  document.addEventListener('contextmenu', (e) => {
+    if (!e.target.closest('.mind-node') && !e.target.closest('.ctx-menu')) {
+      hideContextMenu();
+    }
+  });
+
+  // 键盘快捷键
+  document.addEventListener('keydown', (e) => {
+    // 编辑中不处理快捷键
+    if (editingId) return;
+
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      if (selectedId) addChild(selectedId);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedId) addSibling(selectedId);
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selectedId && selectedId !== data.id) {
+        e.preventDefault();
+        deleteNode(selectedId);
+      }
+    } else if (e.key === 'F2') {
+      e.preventDefault();
+      if (selectedId) startEdit(selectedId);
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      if (selectedId) toggleCollapse(selectedId);
+    } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+      e.preventDefault(); undo();
+    } else if ((e.key === 'y' && (e.ctrlKey || e.metaKey)) || (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)) {
+      e.preventDefault(); redo();
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      navigateNode(e.key);
+    }
+  });
+
+  // 工具栏按钮
+  document.getElementById('btnUndo').addEventListener('click', undo);
+  document.getElementById('btnRedo').addEventListener('click', redo);
+  document.getElementById('btnAddChild').addEventListener('click', () => { if (selectedId) addChild(selectedId); else showToast('请先选中一个节点'); });
+  document.getElementById('btnAddSibling').addEventListener('click', () => { if (selectedId) addSibling(selectedId); else showToast('请先选中一个节点'); });
+  document.getElementById('btnDelete').addEventListener('click', () => { if (selectedId) deleteNode(selectedId); else showToast('请先选中一个节点'); });
+  document.getElementById('btnZoomIn').addEventListener('click', () => zoomTo(zoom * 1.2));
+  document.getElementById('btnZoomOut').addEventListener('click', () => zoomTo(zoom / 1.2));
+  document.getElementById('btnFit').addEventListener('click', fitToScreen);
+
+  // 布局切换
+  const layoutBtns = { btnLayoutMindmap: 'mindmap', btnLayoutTree: 'tree', btnLayoutOrg: 'org' };
+  Object.entries(layoutBtns).forEach(([btnId, mode]) => {
+    document.getElementById(btnId).addEventListener('click', () => {
+      layoutMode = mode;
+      document.querySelectorAll('#btnLayoutMindmap,#btnLayoutTree,#btnLayoutOrg').forEach(b => b.classList.remove('active'));
+      document.getElementById(btnId).classList.add('active');
+      render();
+      setTimeout(fitToScreen, 100);
+    });
+  });
+
+  // 快捷键面板切换
+  const shortcutsPanel = document.getElementById('shortcutsPanel');
+  document.getElementById('btnShortcuts').addEventListener('click', () => {
+    shortcutsPanel.style.display = shortcutsPanel.style.display === 'none' ? 'block' : 'none';
+  });
+}
+
+/** 方向键导航节点 */
+function navigateNode(key) {
+  if (!selectedId || !data) return;
+  const node = findNode(data, selectedId);
+  if (!node) return;
+  const dir = node._dir || 'right';
+
+  if (key === 'ArrowRight') {
+    if (dir === 'right' || layoutMode === 'tree') {
+      // 进入子节点
+      if (node.children && node.children.length > 0 && !node.collapsed) {
+        selectNode(node.children[0].id);
+      }
+    } else if (dir === 'left') {
+      // 回到父节点
+      const parent = findParent(data, selectedId, null);
+      if (parent) selectNode(parent.id);
+    }
+  } else if (key === 'ArrowLeft') {
+    if (dir === 'left') {
+      if (node.children && node.children.length > 0 && !node.collapsed) {
+        selectNode(node.children[0].id);
+      }
+    } else if (dir === 'right') {
+      const parent = findParent(data, selectedId, null);
+      if (parent) selectNode(parent.id);
+    }
+  } else if (key === 'ArrowDown') {
+    if (dir === 'down' && layoutMode === 'org') {
+      if (node.children && node.children.length > 0 && !node.collapsed) {
+        selectNode(node.children[0].id);
+      }
+    } else {
+      // 同级下一个
+      const parent = findParent(data, selectedId, null);
+      if (parent) {
+        const idx = parent.children.findIndex(c => c.id === selectedId);
+        if (idx < parent.children.length - 1) selectNode(parent.children[idx + 1].id);
+      }
+    }
+  } else if (key === 'ArrowUp') {
+    if (dir === 'down' && layoutMode === 'org') {
+      const parent = findParent(data, selectedId, null);
+      if (parent) selectNode(parent.id);
+    } else {
+      const parent = findParent(data, selectedId, null);
+      if (parent) {
+        const idx = parent.children.findIndex(c => c.id === selectedId);
+        if (idx > 0) selectNode(parent.children[idx - 1].id);
+      }
+    }
+  }
+}
+
+// ========== 初始化数据 ==========
+function createInitialData() {
+  return {
+    id: uid(), text: '项目规划', collapsed: false,
+    children: [
+      {
+        id: uid(), text: '需求分析', collapsed: false,
+        children: [
+          { id: uid(), text: '用户调研', collapsed: false, children: [
+            { id: uid(), text: '问卷设计', collapsed: false, children: [] },
+            { id: uid(), text: '深度访谈', collapsed: false, children: [] }
+          ]},
+          { id: uid(), text: '竞品分析', collapsed: false, children: [] },
+          { id: uid(), text: '需求文档', collapsed: false, children: [] }
+        ]
+      },
+      {
+        id: uid(), text: '产品设计', collapsed: false,
+        children: [
+          { id: uid(), text: '交互设计', collapsed: false, children: [] },
+          { id: uid(), text: '视觉设计', collapsed: false, children: [] },
+          { id: uid(), text: '原型制作', collapsed: false, children: [] }
+        ]
+      },
+      {
+        id: uid(), text: '技术开发', collapsed: false,
+        children: [
+          { id: uid(), text: '前端开发', collapsed: false, children: [
+            { id: uid(), text: '组件设计', collapsed: false, children: [] },
+            { id: uid(), text: '页面实现', collapsed: false, children: [] }
+          ]},
+          { id: uid(), text: '后端开发', collapsed: false, children: [] },
+          { id: uid(), text: '数据库设计', collapsed: false, children: [] }
+        ]
+      },
+      {
+        id: uid(), text: '测试上线', collapsed: false,
+        children: [
+          { id: uid(), text: '功能测试', collapsed: false, children: [] },
+          { id: uid(), text: '性能优化', collapsed: false, children: [] },
+          { id: uid(), text: '部署发布', collapsed: false, children: [] }
+        ]
+      }
+    ]
+  };
+}
+
+// ========== 启动 ==========
+function init() {
+  data = createInitialData();
+  saveHistory();
+  render();
+  initEvents();
+  updateTransform();
+  // 初始适应屏幕
+  setTimeout(fitToScreen, 100);
+}
+
+init();
+</script>
+</body>
+</html>
