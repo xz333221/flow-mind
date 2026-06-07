@@ -752,6 +752,17 @@ function nodeHasChildren(n: LayoutNode) {
   return !!data && data.children.length > 0
 }
 
+/** How many direct children a collapsed node is hiding.  Reads from
+ *  the original data tree (the layout tree's `n.children` is empty
+ *  for a collapsed node, so it would always be 0).  Returns 0 if
+ *  the node doesn't exist or has no children, so callers can use
+ *  the result as a v-if guard. */
+function collapsedChildCount(id: string): number {
+  const data = findNode(dataRef.value, id)
+  if (!data) return 0
+  return data.children.length
+}
+
 // =====================================================================
 // Edge anchor — 1.html JS L608-626.  For horizontal children (right or
 // left), the line lands on the side mid-edge of the parent and child.
@@ -1043,6 +1054,14 @@ watch(
           @dblclick="(e) => { e.stopPropagation(); if (!readonly) startEdit(n.id) }"
         >
           <span v-if="editingId !== n.id" class="zm-text">{{ n.text }}</span>
+          <span
+            v-if="isCollapsed(n.id) && !n.isRoot && collapsedChildCount(n.id) > 0"
+            class="zm-collapse-badge"
+            :class="{ 'is-on-left': n.side === -1 }"
+            :title="`展开 ${collapsedChildCount(n.id)} 个子节点`"
+            @mousedown.stop
+            @click.stop="toggleCollapse(n.id)"
+          >{{ collapsedChildCount(n.id) }}</span>
           <input
             v-else
             class="zm-input"
@@ -1300,6 +1319,36 @@ watch(
 }
 .zm-collapse:hover {
   transform: translateY(-50%) scale(1.15);
+}
+/* xmind-style collapsed child-count badge.  Sits on the line-out
+ * side of the node (right edge for right-side nodes, left edge for
+ * left-side), vertically centered.  Click to expand. */
+.zm-collapse-badge {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: calc(100% + 8px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #fb923c;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  user-select: none;
+  z-index: 2;
+}
+.zm-collapse-badge.is-on-left {
+  left: auto;
+  right: calc(100% + 8px);
+}
+.zm-collapse-badge:hover {
+  background: #f97316;
 }
 .zm-del {
   right: -8px;
