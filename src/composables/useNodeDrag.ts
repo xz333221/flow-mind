@@ -27,12 +27,27 @@ export function useNodeDrag(opts: NodeDragOptions) {
     return nodeOffsets.get(id) ?? { x: 0, y: 0 }
   }
 
+  /** Layout-space (un-scaled) position of `n` — used by `left`/`top`
+   *  and by the SVG edge anchor.  Includes the committed per-node
+   *  drag offset, but NOT the in-flight dragDelta.  The dragDelta
+   *  is applied via the node's CSS `transform` so that we don't
+   *  move the node twice (once via left/top, once via transform),
+   *  which is what produced the 2× offset on mouseup. */
   function nodePos(n: LayoutNode): { x: number; y: number } {
     const off = getOffset(n.id)
-    if (draggingNodeId.value === n.id && dragDelta.value) {
-      return { x: n.x + off.x + dragDelta.value.x, y: n.y + off.y + dragDelta.value.y }
-    }
     return { x: n.x + off.x, y: n.y + off.y }
+  }
+
+  /** Live drag delta in layout space — only non-null while the user
+   *  is mid-drag.  Use this for the node's CSS `transform` so the
+   *  node glides under the cursor without the SVG edges (which use
+   *  `nodePos`) drifting relative to it.  Returns 0/0 when not
+   *  dragging, so the transform is a no-op for un-dragged nodes. */
+  function liveDragDelta(id: string): { x: number; y: number } {
+    if (draggingNodeId.value === id && dragDelta.value) {
+      return { x: dragDelta.value.x, y: dragDelta.value.y }
+    }
+    return { x: 0, y: 0 }
   }
 
   function startNodeDrag(e: MouseEvent, n: LayoutNode, readonly: boolean) {
@@ -110,6 +125,7 @@ export function useNodeDrag(opts: NodeDragOptions) {
     getOffsets,
     setOffsets,
     nodePos,
+    liveDragDelta,
     startNodeDrag,
     resetOffsets,
   }

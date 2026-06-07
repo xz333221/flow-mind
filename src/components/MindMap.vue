@@ -927,24 +927,29 @@ watch(
       @wheel="panZoom.onWheel"
       @click="onCanvasClick"
     >
-      <!-- SVG layer: only translates with pan; scale is applied to the
-           SVG's own width/height so paths render as vectors at any zoom
-           (instead of getting rasterized by CSS transform: scale). -->
+      <!-- SVG layer: positioned in world coords (vbX, vbY) scaled by
+           panZoom.scale and offset by panZoom.offsetX/Y.  This MUST
+           match the .zm-world's translate+scale exactly so that
+           SVG edges line up with the DOM node rectangles — without
+           this alignment, edges and nodes drift apart at any zoom
+           ≠ 1 (the SVG's viewBox-internal (0,0) corresponds to
+           (vbX, vbY) in world space, so the SVG element's CSS left
+           is vbX*scale + panX, not panX). -->
       <div
         class="zm-svg-layer"
         :style="{
-          transform: `translate(${panZoom.offsetX.value}px, ${panZoom.offsetY.value}px)`,
+          left: (layoutResult.vbX * panZoom.scale.value + panZoom.offsetX.value) + 'px',
+          top: (layoutResult.vbY * panZoom.scale.value + panZoom.offsetY.value) + 'px',
+          width: (layoutResult.vbW * panZoom.scale.value) + 'px',
+          height: (layoutResult.vbH * panZoom.scale.value) + 'px',
         }"
-      >        <svg
+      >
+        <svg
           class="zm-svg"
           :viewBox="viewBox"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio="xMinYMin meet"
           :width="layoutResult.vbW * panZoom.scale.value"
           :height="layoutResult.vbH * panZoom.scale.value"
-          :style="{
-            left: layoutResult.vbX * panZoom.scale.value + 'px',
-            top: layoutResult.vbY * panZoom.scale.value + 'px',
-          }"
         >
           <g class="zm-edges">
             <path
@@ -1001,9 +1006,11 @@ watch(
             fontWeight: nodeFontWeight(n),
             // 1.html centering trick: position the box by its center
             // (x,y) and let the browser center it via transform.
-            // The manual drag offset is added to the -50%/-50% to
-            // keep drag working in the new coordinate system.
-            transform: `translate(calc(-50% + ${nodeDrag.getOffset(n.id).x}px), calc(-50% + ${nodeDrag.getOffset(n.id).y}px))`,
+            // The in-flight drag delta goes on the transform (NOT
+            // on left/top) so that the SVG edges, which read
+            // `nodePos`, track the node 1:1.  Adding both would
+            // shift the node by 2× the cursor delta on mouseup.
+            transform: `translate(calc(-50% + ${nodeDrag.liveDragDelta(n.id).x}px), calc(-50% + ${nodeDrag.liveDragDelta(n.id).y}px))`,
           }"
           @mousedown="(e) => nodeDrag.startNodeDrag(e, n, readonly)"
           @click="(e) => onNodeClick(e, n)"
@@ -1162,10 +1169,12 @@ watch(
 }
 .zm-svg-layer {
   position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: 0 0;
+  /* Position is set inline via the world→screen mapping
+     (vbX*scale + panX, vbY*scale + panY).  No CSS transform here
+     so the SVG layer's geometry matches the .zm-world's
+     translate+scale exactly. */
   pointer-events: none;
+  overflow: visible;
 }
 .zm-marquee {
   position: absolute;
