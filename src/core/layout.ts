@@ -99,8 +99,8 @@ function fontAt(depth: number) {
 }
 
 // =====================================================================
-// Gaps — keep z-mind defaults (H_GAP=60, V_GAP=14).  1.html uses 70/10
-// but z-mind's existing tests assume 60/14; we match the project.
+// Gaps — keep flow-mind defaults (H_GAP=60, V_GAP=14).  1.html uses 70/10
+// but flow-mind's existing tests assume 60/14; we match the project.
 // =====================================================================
 const H_GAP = 60
 const V_GAP = 14
@@ -255,7 +255,7 @@ export function layout(
 // doLayout — 1.html JS L427-492.  Three modes:
 //   - 'mindmap': first ceil(n/2) children fan to the right, rest to
 //                the left; each side uses hGap (1.html uses 70, we use
-//                60 to match z-mind's default).
+//                60 to match flow-mind's default).
 //   - 'tree'   : all children fan to the right (single column).
 //   - 'org'    : all children fan downward.
 //

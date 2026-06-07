@@ -9,7 +9,7 @@ export { uid, clone, findNode, findParent, removeNode, addChild, addSibling }
 
 const plugin = {
   install(app: App) {
-    app.component('ZMindMap', MindMap)
+    app.component('FlowMindMap', MindMap)
   },
 }
 

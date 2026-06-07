@@ -116,11 +116,11 @@ function exportToFile() {
  *  项目概览), and a moderately wide tree so the preview isn't
  *  just one path.  Image URLs use placehold.co so the demo works
  *  anywhere without bundling assets. */
-const STARTER = `# z-mind 思维导图
+const STARTER = `# flow-mind 思维导图
 
-[GitHub 仓库](https://github.com/xuze/z-mind)
+[GitHub 仓库](https://github.com/xuze/flow-mind)
 
-![cover](https://placehold.co/600x300/3b82f6/ffffff?text=z-mind+demo)
+![cover](https://placehold.co/600x300/3b82f6/ffffff?text=flow-mind+demo)
 
 ## 项目概览
 一个现代、极简的思维导图工具 — xmind 风格，可作为 Vue 组件嵌入。

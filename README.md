@@ -1,4 +1,4 @@
-# z-mind
+# flow-mind
 
 A modern, minimalist mind mapping tool — xmind-style, embeddable as a Vue 3 component.
 
@@ -12,26 +12,26 @@ A modern, minimalist mind mapping tool — xmind-style, embeddable as a Vue 3 co
 ## 安装
 
 ```bash
-pnpm add z-mind
+pnpm add flow-mind
 ```
 
 ## 在项目中使用
 
 ```ts
 import { createApp } from 'vue'
-import ZMind from 'z-mind'
-import 'z-mind/style.css'
+import FlowMind from 'flow-mind'
+import 'flow-mind/style.css'
 
 const app = createApp(App)
-app.use(ZMind)
+app.use(FlowMind)
 ```
 
 或局部使用:
 
 ```vue
 <script setup lang="ts">
-import { MindMap } from 'z-mind'
-import type { MindMapNode } from 'z-mind'
+import { MindMap } from 'flow-mind'
+import type { MindMapNode } from 'flow-mind'
 
 const data: MindMapNode = {
   id: 'root',

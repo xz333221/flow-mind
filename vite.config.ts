@@ -22,8 +22,8 @@ export default defineConfig(({ mode }) => {
       ? {
           lib: {
             entry: r('src/entry.ts'),
-            name: 'ZMind',
-            fileName: (format) => `z-mind.${format}.js`,
+            name: 'FlowMind',
+            fileName: (format) => `flow-mind.${format}.js`,
             formats: ['es', 'umd'],
           },
           rollupOptions: {

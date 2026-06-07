@@ -1,5 +1,5 @@
 {
-  "name": "z-mind",
+  "name": "flow-mind",
   "version": "0.1.0",
   "description": "A modern, minimalist mind mapping tool — xmind-style, embeddable as a Vue component.",
   "type": "module",
@@ -10,10 +10,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xuze/z-mind.git"
+    "url": "git+https://github.com/xuze/flow-mind.git"
   },
   "bugs": {
-    "url": "https://github.com/xuze/z-mind/issues"
+    "url": "https://github.com/xuze/flow-mind/issues"
   },
   "keywords": [
     "mindmap",
@@ -31,14 +31,14 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "./dist/z-mind.umd.cjs",
-  "module": "./dist/z-mind.js",
+  "main": "./dist/flow-mind.umd.cjs",
+  "module": "./dist/flow-mind.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/z-mind.js",
-      "require": "./dist/z-mind.umd.cjs"
+      "import": "./dist/flow-mind.js",
+      "require": "./dist/flow-mind.umd.cjs"
     },
     "./style.css": "./dist/style.css"
   },

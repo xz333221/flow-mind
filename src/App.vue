@@ -12,7 +12,7 @@ import type { MindMapNode, MindMapSettings } from './types'
 // Sample data — same shape the user can pass in production.
 const initialData: MindMapNode = {
   id: 'root',
-  text: 'z-mind 思维导图',
+  text: 'flow-mind 思维导图',
   children: [
     {
       id: 'n_features',
@@ -58,7 +58,7 @@ function pickDataByHash(): MindMapNode {
 // Used by the verify smoke test to exercise the wide-fan path.
 const fanData: MindMapNode = {
   id: 'root',
-  text: 'z-mind 思维导图',
+  text: 'flow-mind 思维导图',
   children: [
     { id: 'n_a', text: '主题一', children: [] },
     { id: 'n_b', text: '主题二', children: [] },
@@ -96,7 +96,7 @@ const stressData: MindMapNode = (() => {
     mk('s_r6', '右六'),
     mk('s_r7', '右七'),
   ]
-  return { id: 'root', text: 'z-mind 思维导图', children: [...left, ...right] }
+  return { id: 'root', text: 'flow-mind 思维导图', children: [...left, ...right] }
 })()
 
 const data = ref<MindMapNode>(pickDataByHash())
