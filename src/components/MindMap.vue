@@ -137,19 +137,16 @@ function triggerRef() {
   // layoutResult now decides for itself whether to preservePositions
   // (see `preserveOnNextLayout`).  The drag-completion callback
   // sets that flag before calling us, so we don't need to do
-  // anything special here — just bump the version.  In the
-  // `else` branch of layoutResult we still call nodeDrag.resetOffsets()
-  // for the non-drag code paths (addChild / edit / setNodeText /
-  // collapse-toggle / etc.) so stale offsets don't linger.
-  if (settings.autoBalanceOnChange && !props.readonly) {
-    nextTick(() => {
-      balanced.value = true
-      // Re-run the layout computed (the `preserve` flag is already
-      // set in the drag case, false otherwise).  Then re-center
-      // the view on it.
-      nextTick(() => resetView())
-    })
-  }
+  // anything special here — just bump the version.
+  //
+  // NB: autoBalanceOnChange used to call resetView() here, but
+  // that yanked the user's zoom/pan on every add / edit /
+  // collapse-toggle — "I zoom in, then click any node and the
+  // view snaps back to fit" was the bug.  We let the layout
+  // recompute and keep the view as-is.  runBalance() — the
+  // explicit "balance" button — is the only place that
+  // re-centres, since it's the user explicitly asking for a
+  // fresh view.
 }
 
 const theme = computed<Required<MindMapTheme>>(() => ({
