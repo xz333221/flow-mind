@@ -1308,16 +1308,16 @@ onMounted(() => {
    *  - right-side node (n.side === 1) → button on the right edge
    *  - left-side node  (n.side === -1) → button on the left edge.
    * Border + icon colour come inline from the node's rainbow branch
-   * hue (or grey when rainbow is off); the background stays
-   * transparent so the button reads as just an outlined icon. */
+   * hue (or grey when rainbow is off); the background is opaque
+   * white so the button reads cleanly against any node fill. */
   right: -8px;
   top: 50%;
   width: 14px;
   height: 14px;
-  background: transparent;
+  background: #ffffff;
   border: 1.5px solid;
   transform: translateY(-50%);
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.18);
 }
 .zm-collapse.is-on-left {
   right: auto;
@@ -1325,6 +1325,7 @@ onMounted(() => {
 }
 .zm-collapse:hover {
   transform: translateY(-50%) scale(1.15);
+  background: #ffffff;
 }
 /* xmind-style collapsed child-count badge.  Sits on the line-out
  * side of the node (right edge for right-side nodes, left edge for

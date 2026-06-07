@@ -5,6 +5,7 @@ import Drawer from './components/Drawer.vue'
 import Outline from './components/Outline.vue'
 import DataPanel from './components/DataPanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import MarkdownPanel from './components/MarkdownPanel.vue'
 import type { MindMapNode, MindMapSettings } from './types'
 
 // Sample data — same shape the user can pass in production.
@@ -102,6 +103,7 @@ const selectedNode = ref<MindMapNode | null>(null)
 const collapsedIds = ref<Set<string>>(new Set())
 const showOutline = ref(false)
 const showData = ref(false)
+const showMarkdown = ref(false)
 const showSettings = ref(false)
 // Preview mode: hides the entire app chrome (top toolbar, node
 // count tip, drawer handle buttons, the MindMap's own toolbar /
@@ -296,11 +298,23 @@ const totalNodes = computed(() => countNodes(data.value))
           v-if="!showData"
           class="zm-app-icon-btn"
           title="显示数据"
-          @click="showData = true"
+          @click="showData = true; showMarkdown = false"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6" />
             <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </button>
+        <button
+          v-if="!showMarkdown"
+          class="zm-app-icon-btn"
+          title="显示 Markdown"
+          @click="showMarkdown = true; showData = false"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7 V4 H20 V7" />
+            <path d="M9 20 H15" />
+            <path d="M12 4 V20" />
           </svg>
         </button>
         <button
@@ -360,6 +374,22 @@ const totalNodes = computed(() => countNodes(data.value))
       @update:open="(v) => (showData = v)"
     >
       <DataPanel
+        :data="data"
+        @import="(d) => (data = d)"
+      />
+    </Drawer>
+
+    <!-- Markdown ↔ 导图: 双向编辑。  与"数据"抽屉互斥 — 打开
+         本抽屉会关闭"数据"抽屉，反之亦然 — 否则两个右抽屉并排
+         会把画布挤得很难看。 -->
+    <Drawer
+      side="right"
+      :width="420"
+      :open="showMarkdown && !previewMode"
+      title="Markdown"
+      @update:open="(v) => (showMarkdown = v)"
+    >
+      <MarkdownPanel
         :data="data"
         @import="(d) => (data = d)"
       />
