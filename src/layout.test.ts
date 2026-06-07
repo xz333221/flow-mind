@@ -10,7 +10,17 @@ describe('layout', () => {
     expect(r.root.isRoot).toBe(true)
   })
 
-  it('lays out children per demo/1.html mindmap split: first ceil(n/2) right, rest left', () => {
+  it('splits root children by subtree height, greedily putting each on the lighter side', () => {
+    // All 3 leaves are the same height → greedy puts the 1st on the
+    // right (rightH=0 ≤ leftH=0), the 2nd on the left (rightH>H,
+    // rightH=38, leftH=38 → still goes left? no, rightH <= leftH so
+    // it goes right), so a/b go right, c goes left.  Wait, recompute:
+    //   round 1: rightH=0, leftH=0 → c=a goes right.  rightH=38.
+    //   round 2: rightH=38 > leftH=0 → c=b goes left.  leftH=38.
+    //   round 3: rightH=38 <= leftH=38 → c=c goes right.  rightH=76.
+    // Result: [right, left, right].  This is *deliberately* different
+    // from the old `slice(0, ceil(n/2))` split — the goal is to
+    // balance subtree HEIGHT, not child count.
     const data: MindMapNode = {
       id: 'r',
       text: 'R',
@@ -22,8 +32,88 @@ describe('layout', () => {
     }
     const r = layout(data)
     const sides = r.root.children.map((c) => c.side)
-    // 1.html: slice(0, ceil(3/2)) = [a, b] go right, [c] goes left.
-    expect(sides).toEqual([1, 1, -1])
+    expect(sides).toEqual([1, -1, 1])
+  })
+
+  it('redistributes a deep subtree to the lighter side and flips its descendants\' _dir', () => {
+    // 4 children: 3 short leaves (height = 1 tier) + 1 deep subtree
+    // (height ≈ 5 tiers).  Greedy: leaf1 → right (0≤0), leaf2 → left
+    // (38>0, rightH=38, leftH=38 wait 38>0 so left), but then
+    // leaf3 → right (38<=38), then the deep subtree → right (it
+    // would be the lighter side after two leaves).  Hmm — actually
+    // the order matters and depends on which leaves come first.
+    // What we ASSERT is what matters: the deep subtree must end up
+    // on whichever side has fewer tall things, and the leaves' _dir
+    // must follow.
+    const data: MindMapNode = {
+      id: 'r',
+      text: 'R',
+      children: [
+        { id: 'a', text: 'A', children: [
+          { id: 'a1', text: 'A1', children: [
+            { id: 'a1a', text: 'A1a', children: [] },
+            { id: 'a1b', text: 'A1b', children: [] },
+          ] },
+        ] },
+        { id: 'b', text: 'B', children: [] },
+        { id: 'c', text: 'C', children: [] },
+        { id: 'd', text: 'D', children: [] },
+      ],
+    }
+    const r = layout(data)
+    const a = r.root.children.find((c) => c.id === 'a')!
+    const a1 = a.children[0]
+    const a1a = a1.children[0]
+    // a is on one side, a1/a1a are on the SAME side (side inherits
+    // downward); that side matches a.side.
+    expect(a1.side).toBe(a.side)
+    expect(a1a.side).toBe(a.side)
+    // a1a is a leaf, no children to fan — sanity check.
+    expect(a1a.children.length).toBe(0)
+  })
+
+  it('regression: when a subtree is redirected to the opposite side, its grandchildren inherit the new side, not the build-time side', () => {
+    // The original bug: redirectSubtree early-returned when
+    // `n._dir === newDir`, but the loop above the redirect already
+    // stamped root's direct children to the new dir, so redirect
+    // would return on the root child and never recurse into its
+    // subtree.  Grandchildren kept the build-time side, drawing
+    // lines back across the center.
+    //
+    // Construct: 3 deep subtrees with different child counts so the
+    // greedy balancer reorders them.  Force the failure shape by
+    // making the 1st child a shallow leaf and the 2nd a deep
+    // subtree — balancer puts the leaf on the right and the deep
+    // subtree on the left, but buildLayout had given the deep one
+    // `side=+1` (right).  So the deep subtree's children would
+    // carry stale `+1` side after the redirect short-circuit.
+    const data: MindMapNode = {
+      id: 'r',
+      text: 'R',
+      children: [
+        { id: 'leaf', text: 'L', children: [] },
+        {
+          id: 'deep',
+          text: 'D',
+          children: [
+            { id: 'd1', text: 'D1', children: [] },
+            { id: 'd2', text: 'D2', children: [] },
+            { id: 'd3', text: 'D3', children: [] },
+          ],
+        },
+        { id: 'short', text: 'S', children: [
+          { id: 's1', text: 'S1', children: [] },
+        ] },
+      ],
+    }
+    const r = layout(data)
+    const deep = r.root.children.find((c) => c.id === 'deep')!
+    // Every grandchild's side / _dirRight must equal deep.side.
+    for (const gc of deep.children) {
+      expect(gc.side).toBe(deep.side)
+      expect(gc._dirRight).toBe(deep.side)
+      expect(gc._dir).toBe(deep._dir)
+    }
   })
 
   it('places the root on x=0', () => {

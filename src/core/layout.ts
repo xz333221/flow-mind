@@ -33,6 +33,13 @@ export interface LayoutNode {
    * (org mode).
    */
   _dir: 'right' | 'left' | 'down'
+  /** Direction this node's children fan out in, as a signed scalar
+   *  (1 = right, -1 = left).  Mirrors `_dir` for callers that need
+   *  a number.  Kept in sync by applyDoLayout and forceRight — when
+   *  the height-based balancer moves a child to the opposite side,
+   *  the whole subtree gets its `side` / `_dir` / `_dirRight`
+   *  re-stamped so descendants fan the right way. */
+  _dirRight: 1 | -1
   /** Layout-only: vertical extent of this node's subtree (post-order
    *  walk result, read by layoutHorizontal).  Not for public use. */
   _subtreeH: number
@@ -180,10 +187,57 @@ export function layout(
 // =====================================================================
 function applyDoLayout(root: LayoutNode, mode: LayoutMode): void {
   if (mode === 'mindmap') {
-    const rightKids = root.children.slice(0, Math.ceil(root.children.length / 2))
-    const leftKids = root.children.slice(Math.ceil(root.children.length / 2))
-    for (const c of rightKids) c._dir = 'right'
-    for (const c of leftKids) c._dir = 'left'
+    // Split root's children by subtree HEIGHT, not by child count.  A
+    // 4-vs-4 split where one side has 4 short leaves and the other
+    // has 4 deep subtrees makes the canvas lopsided.  Greedy: walk
+    // children in order, put each on the lighter side (ties → right
+    // so a perfectly-symmetric input still looks balanced).  When
+    // the balancer moves a child across the center line, the whole
+    // subtree must follow — its descendants' `side` and `_dir` are
+    // still inherited from buildLayout, so the rendering / line
+    // layer would otherwise draw the children on the *old* side.
+    const kids = root.children
+    const rightKids: LayoutNode[] = []
+    const leftKids: LayoutNode[] = []
+    let rightH = 0
+    let leftH = 0
+    for (const c of kids) {
+      if (rightH <= leftH) {
+        rightKids.push(c)
+        rightH += c._subtreeH
+      } else {
+        leftKids.push(c)
+        leftH += c._subtreeH
+      }
+    }
+    for (const c of rightKids) {
+      c._dir = 'right'
+      c.side = 1
+      c._dirRight = 1
+    }
+    for (const c of leftKids) {
+      c._dir = 'left'
+      c.side = -1
+      c._dirRight = -1
+    }
+    // redirectSubtree: a child landed on the OPPOSITE side from what
+    // buildLayout assigned.  The loop above already stamped the
+    // child's own _dir/side/_dirRight to the new side, but its
+    // descendants still inherit the *old* side from buildLayout —
+    // without recursing in, grandchildren would still be on the
+    // build-time side, drawing lines back across the center.  Walk
+    // each redirected child's subtree and force every node's
+    // _dir/side/_dirRight to the new side.  We don't touch x/y yet
+    // — layoutHorizontal (next call) recomputes them from `_dir`.
+    const redirectSubtree = (n: LayoutNode, dir: 'right' | 'left') => {
+      const d = dir === 'right' ? (1 as const) : (-1 as const)
+      n._dir = dir
+      n.side = d
+      n._dirRight = d
+      for (const c of n.children) redirectSubtree(c, dir)
+    }
+    for (const c of rightKids) redirectSubtree(c, 'right')
+    for (const c of leftKids) redirectSubtree(c, 'left')
     // layoutHorizontal takes (node, dir) and walks node.children —
     // it can't be called twice on the same parent with different
     // dirs (the second call would stomp the first's _dir).  So we
@@ -294,6 +348,7 @@ function buildLayout(
     collapsed: node.collapsed,
     side,
     _dir: dir,
+    _dirRight: side,
     _subtreeH: size.h,
     _subtreeW: size.w,
     children: [],
