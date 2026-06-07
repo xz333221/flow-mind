@@ -100,41 +100,41 @@ async function freshNode() {
   console.log('remove link: ✓')
 }
 
-// 3) add note via the menu → editor appears → type → blur → note
-//    icon shows with the right tooltip.
+// 3) add note via the menu → the right-side note drawer opens →
+//    type → blur → note icon shows on the node with the right
+//    tooltip.  The drawer is the new home for note editing
+//    (commit ea8156); the inline editor has been removed.
 {
   const node = await freshNode()
   await node.click({ button: 'right' })
   await page.waitForTimeout(120)
   await page.locator('.zm-node-menu .zm-node-menu-item:has-text("添加笔记")').click()
-  await page.waitForTimeout(200)
-  const editor = page.locator('.zm-node-note-editor textarea')
-  if (await editor.count() !== 1) {
-    console.error('note editor did not appear')
+  await page.waitForTimeout(250)
+  // Drawer should be open and bound to the right-clicked node.
+  const drawer = page.locator('.zm-drawer--right:has(.zm-note-panel)')
+  if (await drawer.count() !== 1) {
+    console.error('note drawer did not open')
     await browser.close()
     process.exit(1)
   }
-  await editor.fill('hello note world')
-  // Blur to commit.
+  const ta = page.locator('.zm-note-panel textarea')
+  if (await ta.count() !== 1) {
+    console.error('note drawer textarea missing')
+    await browser.close()
+    process.exit(1)
+  }
+  console.log('add note (drawer opens): ✓')
+  await ta.fill('hello note world')
+  // Blur to commit (drawer auto-commits on blur).
   await page.locator('.zm-canvas').click({ position: { x: 50, y: 50 } })
-  await page.waitForTimeout(200)
+  await page.waitForTimeout(300)
   const noteCount = await page.locator('.zm-node-note-btn[title="hello note world"]').count()
   if (noteCount !== 1) {
     console.error('expected 1 note btn with right tooltip, got', noteCount)
     await browser.close()
     process.exit(1)
   }
-  console.log('add note: ✓')
   console.log('commit note on blur: ✓')
-
-  // The note icon's title is the preview — assert it's the
-  // (truncated) full text for short notes.
-  const title = await page.locator('.zm-node-note-btn').first().getAttribute('title')
-  if (title !== 'hello note world') {
-    console.error('note title unexpected:', JSON.stringify(title))
-    await browser.close()
-    process.exit(1)
-  }
   console.log('note tooltip: ✓')
 }
 

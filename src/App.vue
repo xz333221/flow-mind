@@ -219,25 +219,24 @@ function onChange(next: MindMapNode) {
 function onSelect(node: MindMapNode | null) {
   selectedNode.value = node
   if (node) {
-    // A node was just selected — open the note drawer and bump
-    // the focus tick so the textarea grabs focus.  We do this
-    // for any selection (not just nodes that already have a
-    // note) so the drawer is always there to add a fresh note.
-    // We also close the other right drawers so they don't
-    // compete for the same horizontal space.
+    // A node was just selected — open the note drawer so the
+    // user can see / edit the note in context.  We do NOT bump
+    // the focus tick here: stealing focus from the canvas on
+    // every node click would make Tab / Enter shortcuts stop
+    // working (the keydown listener skips events whose target
+    // is an INPUT / TEXTAREA).  Focus only happens when the
+    // user explicitly asks — see `onEditNote`.
     if (!showNote.value) {
       showData.value = false
       showMarkdown.value = false
       showNote.value = true
     }
-    noteFocusTick.value++
   } else {
-    // The user clicked empty canvas.  Keep the drawer open but
-    // reset to a fresh state.  We don't auto-close here because
-    // the user might just be deselecting to make a marquee
-    // selection — closing the drawer on every deselect would
-    // be jarring.  The panel renders an empty-state when its
-    // `selectedNode` prop is null.
+    // The user clicked empty canvas.  Close the note drawer
+    // too — the panel is about to render its empty state
+    // (because the panel's `selectedNode` is now null), and
+    // a half-empty drawer is worse UX than no drawer.
+    showNote.value = false
   }
 }
 
@@ -486,13 +485,11 @@ const totalNodes = computed(() => countNodes(data.value))
     </Drawer>
 
     <!-- 笔记抽屉：选中节点时自动打开，承载每个节点的 note
-         编辑/查看。同样与"数据"/"Markdown"互斥。  仅在有
-         选中节点时挂载，避免 NotePanel 在 selectedNode=null
-         状态下出现空态闪烁。 -->
+         编辑/查看。同样与"数据"/"Markdown"互斥。 -->
     <Drawer
       side="right"
       :width="360"
-      :open="showNote && !previewMode && !!selectedNode"
+      :open="showNote && !previewMode"
       title="笔记"
       @update:open="(v) => (showNote = v)"
     >

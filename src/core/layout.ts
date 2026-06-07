@@ -77,11 +77,11 @@ const NODE_FONTS = [18, 15, 13, 12]
 const NODE_FONT_WEIGHTS = [700, 600, 500, 400]
 const NODE_HEIGHTS = [52, 40, 32, 28]
 const NODE_MIN_W = [120, 80, 60, 44]
-/** Horizontal padding in `em`, matching `.zm-node { padding: 0 1.6em }`
+/** Horizontal padding in `em`, matching `.zm-node { padding: 0 0.8em }`
  *  in MindMap.vue.  Keep these in sync or the SVG edges will pierce
- *  the node box (1.6em > the px value previously here for tiers 2/3,
- *  which is why sub-branch ribbons visibly entered the node). */
-const NODE_PAD_EM = [1.6, 1.6, 1.6, 1.6]
+ *  the node box.  Tightened from 1.6em → 0.8em so long-text nodes
+ *  (markdown body lines, links) don't end up comically wide. */
+const NODE_PAD_EM = [0.8, 0.8, 0.8, 0.8]
 const MAX_TIER = NODE_FONTS.length - 1
 
 function padPx(depth: number): number {

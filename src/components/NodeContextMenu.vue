@@ -109,27 +109,27 @@ function run(handler: () => void) {
     :style="{ left: clamped.left + 'px', top: clamped.top + 'px' }"
     @contextmenu.prevent
   >
-    <button class="zm-node-menu-item" :disabled="readonly" @click="run(() => emit('pickImage'))">
+    <button class="zm-node-menu-item" :disabled="readonly" @click.stop="run(() => emit('pickImage'))">
       <Icon name="image" :size="13" />
       <span>{{ hasImage ? '替换图片' : '添加图片' }}</span>
     </button>
-    <button v-if="hasImage" class="zm-node-menu-item" :disabled="readonly" @click="run(() => emit('removeImage'))">
+    <button v-if="hasImage" class="zm-node-menu-item" :disabled="readonly" @click.stop="run(() => emit('removeImage'))">
       <Icon name="x" :size="13" />
       <span>移除图片</span>
     </button>
-    <button class="zm-node-menu-item" :disabled="readonly" @click="run(() => emit('setLink'))">
+    <button class="zm-node-menu-item" :disabled="readonly" @click.stop="run(() => emit('setLink'))">
       <Icon name="link" :size="13" />
       <span>{{ hasLink ? '编辑链接' : '添加链接' }}</span>
     </button>
-    <button v-if="hasLink" class="zm-node-menu-item" :disabled="readonly" @click="run(() => emit('removeLink'))">
+    <button v-if="hasLink" class="zm-node-menu-item" :disabled="readonly" @click.stop="run(() => emit('removeLink'))">
       <Icon name="x" :size="13" />
       <span>移除链接</span>
     </button>
-    <button class="zm-node-menu-item" :disabled="readonly" @click="run(() => emit('editNote'))">
+    <button class="zm-node-menu-item" :disabled="readonly" @click.stop="run(() => emit('editNote'))">
       <Icon name="note" :size="13" />
       <span>{{ hasNote ? '编辑笔记' : '添加笔记' }}</span>
     </button>
-    <button v-if="hasNote" class="zm-node-menu-item" :disabled="readonly" @click="run(() => emit('removeNote'))">
+    <button v-if="hasNote" class="zm-node-menu-item" :disabled="readonly" @click.stop="run(() => emit('removeNote'))">
       <Icon name="x" :size="13" />
       <span>移除笔记</span>
     </button>
