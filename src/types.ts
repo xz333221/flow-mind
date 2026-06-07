@@ -176,6 +176,14 @@ export interface MindMapExpose {
   resetView: () => void
   exportData: () => string
   importData: (json: string) => boolean
+  /** Serialize the current data tree as markdown. */
+  getMarkdown: () => string
+  /** Replace the data tree with the result of parsing `md`.  The
+   *  `emitMarkdownChange` flag (default true) controls whether the
+   *  change is also echoed via `markdownChange` — set false to
+   *  avoid feedback loops when the host just wrote back the
+   *  value the component emitted. */
+  setMarkdown: (md: string, emitMarkdownChange?: boolean) => void
   setBalanced: (value: boolean) => void
   isBalanced: () => boolean
   balance: () => void

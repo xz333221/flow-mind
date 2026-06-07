@@ -1,5 +1,5 @@
-// Compare node positions between demo/1-test.html (flow-mind 3-node data)
-// and the running flow-mind dev server, and capture the screenshots asked
+// Compare node positions between demo/1-test.html (flow-mindmap 3-node data)
+// and the running flow-mindmap dev server, and capture the screenshots asked
 // for in the task. Output: PNGs + a per-node position table.
 import { chromium } from 'playwright'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -8,11 +8,11 @@ import { resolve } from 'node:path'
 const outDir = 'verify-output'
 mkdirSync(outDir, { recursive: true })
 
-// 1) Build the demo test HTML with the 3-node flow-mind style data.
+// 1) Build the demo test HTML with the 3-node flow-mindmap style data.
 const demoPath = 'demo/1.html'
 const SAMPLE = {
   id: 'root',
-  text: 'flow-mind 思维导图',
+  text: 'flow-mindmap 思维导图',
   collapsed: false,
   children: [
     {
@@ -82,15 +82,15 @@ const demoPositions = {}
   await page.close()
 }
 
-// ============== Part 2: flow-mind dev server ==============
-console.log('\n===== Part 2: flow-mind dev server =====')
-const flowmindPositions = {}
+// ============== Part 2: flow-mindmap dev server ==============
+console.log('\n===== Part 2: flow-mindmap dev server =====')
+const flowMindmapPositions = {}
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto('http://localhost:7851/', { waitUntil: 'networkidle' })
   await page.waitForSelector('.zm-node', { timeout: 8000 })
   await page.waitForTimeout(1000)
-  await page.screenshot({ path: `${outDir}/flowmind-3k.png`, fullPage: false })
+  await page.screenshot({ path: `${outDir}/flowMindmap-3k.png`, fullPage: false })
 
   const positions = await page.evaluate(() => {
     return Array.from(document.querySelectorAll('.zm-node')).map((el) => {
@@ -108,13 +108,13 @@ const flowmindPositions = {}
   console.log('text | x | y | data-node-id')
   for (const p of positions) {
     console.log(`${p.text} | ${p.x} | ${p.y} | ${p.nodeId}`)
-    flowmindPositions[p.text] = p
+    flowMindmapPositions[p.text] = p
   }
   await page.close()
 }
 
 // ============== Part 4: tree / org layouts ==============
-console.log('\n===== Part 4: flow-mind tree / org layouts =====')
+console.log('\n===== Part 4: flow-mindmap tree / org layouts =====')
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto('http://localhost:7851/', { waitUntil: 'networkidle' })
@@ -124,14 +124,14 @@ console.log('\n===== Part 4: flow-mind tree / org layouts =====')
   // Click "树形布局" by title attribute.
   await page.locator('button[title^="树形布局"]').click()
   await page.waitForTimeout(600)
-  await page.screenshot({ path: `${outDir}/flowmind-tree.png`, fullPage: false })
-  console.log('Saved flowmind-tree.png')
+  await page.screenshot({ path: `${outDir}/flowMindmap-tree.png`, fullPage: false })
+  console.log('Saved flowMindmap-tree.png')
 
   // Click "组织结构布局" by title attribute.
   await page.locator('button[title^="组织结构布局"]').click()
   await page.waitForTimeout(600)
-  await page.screenshot({ path: `${outDir}/flowmind-org.png`, fullPage: false })
-  console.log('Saved flowmind-org.png')
+  await page.screenshot({ path: `${outDir}/flowMindmap-org.png`, fullPage: false })
+  console.log('Saved flowMindmap-org.png')
 
   await page.close()
 }
@@ -140,11 +140,11 @@ await browser.close()
 
 // ============== Part 3: Comparison table ==============
 console.log('\n===== Comparison table (absolute) =====')
-const allTexts = new Set([...Object.keys(demoPositions), ...Object.keys(flowmindPositions)])
+const allTexts = new Set([...Object.keys(demoPositions), ...Object.keys(flowMindmapPositions)])
 const rows = []
 for (const text of allTexts) {
   const d = demoPositions[text]
-  const z = flowmindPositions[text]
+  const z = flowMindmapPositions[text]
   if (!d || !z) {
     rows.push({ text, d: d ? `${d.x},${d.y}` : '—', z: z ? `${z.x},${z.y}` : '—', dx: '—', dy: '—' })
     continue
@@ -157,7 +157,7 @@ for (const text of allTexts) {
     dy: Math.abs(d.y - z.y),
   })
 }
-console.log('text'.padEnd(20) + ' | demo (x,y)'.padEnd(14) + ' | flowmind (x,y)'.padEnd(18) + ' | |Δx|'.padEnd(6) + ' | |Δy|')
+console.log('text'.padEnd(20) + ' | demo (x,y)'.padEnd(14) + ' | flow-mindmap (x,y)'.padEnd(18) + ' | |Δx|'.padEnd(6) + ' | |Δy|')
 console.log('-'.repeat(75))
 let maxDx = 0, maxDy = 0
 for (const r of rows) {
@@ -175,15 +175,15 @@ console.log(`\nAbsolute Max |Δx| = ${maxDx}px, Max |Δy| = ${maxDy}px`)
 
 // Shape comparison: normalize by subtracting each side's root position
 // to cancel the global pan/zoom offset.
-const dRoot = demoPositions['flow-mind 思维导图']
-const zRoot = flowmindPositions['flow-mind 思维导图']
+const dRoot = demoPositions['flow-mindmap 思维导图']
+const zRoot = flowMindmapPositions['flow-mindmap 思维导图']
 if (dRoot && zRoot) {
   console.log('\n===== Shape comparison (offsets relative to root) =====')
-  console.log('text'.padEnd(20) + ' | demo (dx,dy)'.padEnd(16) + ' | flowmind (dx,dy)'.padEnd(18) + ' | |Δdx| |Δdy|')
+  console.log('text'.padEnd(20) + ' | demo (dx,dy)'.padEnd(16) + ' | flow-mindmap (dx,dy)'.padEnd(18) + ' | |Δdx| |Δdy|')
   console.log('-'.repeat(75))
   let shapeMaxDx = 0, shapeMaxDy = 0
   for (const text of allTexts) {
-    const d = demoPositions[text], z = flowmindPositions[text]
+    const d = demoPositions[text], z = flowMindmapPositions[text]
     if (!d || !z) continue
     const ddx = d.x - dRoot.x, ddy = d.y - dRoot.y
     const zdx = z.x - zRoot.x, zdy = z.y - zRoot.y
@@ -205,17 +205,17 @@ if (dRoot && zRoot) {
 // sides for the same node pairs (a per-side distance check), and the
 // "ratio" of those distances to see if the shape is preserved.
 // Simplest signal: the x-offset of every right-side child should scale
-// uniformly between demo and flowmind if shapes match.
+// uniformly between demo and flow-mindmap if shapes match.
 const dRight = demoPositions['核心功能']
-const zRight = flowmindPositions['核心功能']
+const zRight = flowMindmapPositions['核心功能']
 if (dRight && zRight) {
   const dScale = (dRight.x - dRoot.x) / (zRight.x - zRoot.x)
-  console.log(`\nRight side horizontal scale demo/flowmind = ${dScale.toFixed(3)} (close to 1 means shapes match)`)
+  console.log(`\nRight side horizontal scale demo/flow-mindmap = ${dScale.toFixed(3)} (close to 1 means shapes match)`)
 }
 const dLeft = demoPositions['开源']
-const zLeft = flowmindPositions['开源']
+const zLeft = flowMindmapPositions['开源']
 if (dLeft && zLeft) {
   const dScale = (dRoot.x - dLeft.x) / (zRoot.x - zLeft.x)
-  console.log(`Left  side horizontal scale demo/flowmind = ${dScale.toFixed(3)} (close to 1 means shapes match)`)
+  console.log(`Left  side horizontal scale demo/flow-mindmap = ${dScale.toFixed(3)} (close to 1 means shapes match)`)
 }
 console.log('\nDONE')

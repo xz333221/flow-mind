@@ -84,23 +84,27 @@ const NODE_MIN_W = [120, 80, 60, 44]
 const NODE_PAD_EM = [0.8, 0.8, 0.8, 0.8]
 const MAX_TIER = NODE_FONTS.length - 1
 
-function padPx(depth: number): number {
-  return Math.round(NODE_FONTS[tierFor(depth)] * NODE_PAD_EM[tierFor(depth)])
+function padPx(depth: number, baseFontSize: number): number {
+  return Math.round(fontAt(depth, baseFontSize) * NODE_PAD_EM[tierFor(depth)])
 }
 
 function tierFor(depth: number) {
   return Math.min(MAX_TIER, Math.max(0, depth))
 }
-function heightAt(depth: number) {
-  return NODE_HEIGHTS[tierFor(depth)]
+/** Return the rendered font size for a node at the given depth, scaled
+ *  by the host's `theme.fontSize` (default 14).  The base table is
+ *  tuned at 14px; values scale linearly so a 30px theme produces
+ *  roughly 2.14× larger nodes. */
+function fontAt(depth: number, baseFontSize: number = 14): number {
+  return Math.round((NODE_FONTS[tierFor(depth)] * baseFontSize) / 14 * 10) / 10
 }
-function fontAt(depth: number) {
-  return NODE_FONTS[tierFor(depth)]
+function heightAt(depth: number, baseFontSize: number = 14): number {
+  return Math.round((NODE_HEIGHTS[tierFor(depth)] * baseFontSize) / 14)
 }
 
 // =====================================================================
-// Gaps — keep flow-mind defaults (H_GAP=60, V_GAP=14).  1.html uses 70/10
-// but flow-mind's existing tests assume 60/14; we match the project.
+// Gaps — keep flow-mindmap defaults (H_GAP=60, V_GAP=14).  1.html uses 70/10
+// but flow-mindmap's existing tests assume 60/14; we match the project.
 // =====================================================================
 const H_GAP = 60
 const V_GAP = 14
@@ -170,12 +174,13 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v))
 }
 
-function calcNodeSize(node: MindMapNode, level: number): { w: number; h: number } {
+function calcNodeSize(node: MindMapNode, level: number, baseFontSize: number): { w: number; h: number } {
   const t = tierFor(level)
-  const textW = measureText(node.text || '', NODE_FONTS[t], NODE_FONT_WEIGHTS[t])
-  const pad = padPx(level)
+  const fontSize = fontAt(level, baseFontSize)
+  const textW = measureText(node.text || '', fontSize, NODE_FONT_WEIGHTS[t])
+  const pad = padPx(level, baseFontSize)
   const textWWithPad = Math.ceil(textW + pad * 2)
-  const textH = NODE_HEIGHTS[t]
+  const textH = heightAt(level, baseFontSize)
   // Reserve space for the inline icons: each link/note icon is
   // 16px + 4px gap (only between adjacent icons; no trailing gap
   // — the text label sits right after the last icon).
@@ -189,14 +194,15 @@ function calcNodeSize(node: MindMapNode, level: number): { w: number; h: number 
     iconTrayW += ICON_GAP * iconCount
   }
   const textRowW = textWWithPad + iconTrayW
+  const minW = Math.round((NODE_MIN_W[t] * baseFontSize) / 14)
   if (!node.image) {
-    const w = Math.max(NODE_MIN_W[t], textRowW)
+    const w = Math.max(minW, textRowW)
     return { w, h: textH }
   }
   // Has an image: width accommodates the wider of the text row or
   // the image; height stacks the image + gap + text region.
   const imgW = clamp(node.image.width, IMG_MIN_W, IMG_MAX_W)
-  const w = Math.max(NODE_MIN_W[t], textRowW, Math.ceil(imgW + pad * 2))
+  const w = Math.max(minW, textRowW, Math.ceil(imgW + pad * 2))
   const h = Math.ceil(node.image.height + IMG_GAP + textH)
   return { w, h }
 }
@@ -207,6 +213,10 @@ export interface LayoutOptions {
   mode?: LayoutMode
   /** @deprecated kept for API compat; ignored in 1.html-style layout. */
   balanced?: boolean
+  /** Base font size (px) used to scale node metrics (font/height/
+   *  min-width).  The internal tier table is tuned for 14px; values
+   *  scale linearly.  Default 14. */
+  baseFontSize?: number
   /**
    * When true, layout() leaves each LayoutNode's existing x/y in
    * place — it still does the doLayout split / redirect / stack
@@ -236,7 +246,8 @@ export function layout(
 } {
   const mode: LayoutMode = options.mode ?? 'mindmap'
   const preservePositions = options.preservePositions === true
-  const lr = buildLayout(root, 0, null, 1, 'right')
+  const baseFontSize = options.baseFontSize ?? 14
+  const lr = buildLayout(root, 0, null, 1, 'right', baseFontSize)
 
   // 1.html interleaves calcSubtreeH with doLayout.  We split into two
   // passes: extents first (post-order, so leaves are computed before
@@ -255,7 +266,7 @@ export function layout(
 // doLayout — 1.html JS L427-492.  Three modes:
 //   - 'mindmap': first ceil(n/2) children fan to the right, rest to
 //                the left; each side uses hGap (1.html uses 70, we use
-//                60 to match flow-mind's default).
+//                60 to match flow-mindmap's default).
 //   - 'tree'   : all children fan to the right (single column).
 //   - 'org'    : all children fan downward.
 //
@@ -463,9 +474,10 @@ function buildLayout(
   depth: number,
   parent: LayoutNode | null,
   side: 1 | -1,
-  dir: 'right' | 'left' | 'down'
+  dir: 'right' | 'left' | 'down',
+  baseFontSize: number
 ): LayoutNode {
-  const size = calcNodeSize(node, depth)
+  const size = calcNodeSize(node, depth, baseFontSize)
   const ln: LayoutNode = {
     id: node.id,
     text: node.text,
@@ -477,7 +489,7 @@ function buildLayout(
     y: node._y ?? 0,
     width: size.w,
     height: size.h,
-    fontSize: fontAt(depth),
+    fontSize: fontAt(depth, baseFontSize),
     isRoot: depth === 0,
     collapsed: node.collapsed,
     side,
@@ -497,7 +509,7 @@ function buildLayout(
   ln.children = node.children.map((c, i) => {
     const childSide: 1 | -1 =
       depth === 0 ? (i < rightCount ? (1 as const) : (-1 as const)) : side
-    return buildLayout(c, depth + 1, ln, childSide, dir)
+    return buildLayout(c, depth + 1, ln, childSide, dir, baseFontSize)
   })
   return ln
 }

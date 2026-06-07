@@ -23,7 +23,8 @@ export default defineConfig(({ mode }) => {
           lib: {
             entry: r('src/entry.ts'),
             name: 'FlowMind',
-            fileName: (format) => `flow-mind.${format}.js`,
+            fileName: (format) =>
+              format === 'es' ? 'flow-mindmap.js' : `flow-mindmap.${format}.cjs`,
             formats: ['es', 'umd'],
           },
           rollupOptions: {
@@ -36,6 +37,7 @@ export default defineConfig(({ mode }) => {
             },
           },
           cssCodeSplit: false,
+          emptyOutDir: false,
         }
       : {
           outDir: 'demo-dist',

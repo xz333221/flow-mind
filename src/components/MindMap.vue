@@ -20,6 +20,8 @@ import {
   duplicateNode,
   clone,
   DEFAULT_NEW_NODE_TEXT,
+  markdownToMindMap,
+  mindMapToMarkdown,
 } from '../tree'
 import type { MindMapNode, MindMapTheme, MindMapExpose, MindMapSettings, NodeStyle, MindMapImage } from '../types'
 import { usePanZoom } from '../composables/usePanZoom'
@@ -41,6 +43,24 @@ const props = withDefaults(
      * the canvas's own chrome.
      */
     previewMode?: boolean
+    /**
+     * Optional raw markdown source.  When set, the component parses
+     * it into the data tree and ignores `data` (use one or the
+     * other).  Editing nodes on the canvas emits `markdownChange`
+     * with the re-serialized form, so the host can keep its
+     * markdown source in sync without polling.  Pass an empty
+     * string to clear.
+     */
+    markdown?: string
+    /**
+     * Optional per-edge color list.  When set, top-level branches
+     * draw their edges (and their descendant edges under
+     * `rainbowBranch`) using these colors in order, wrapping
+     * around.  Overrides the palette picked by `branchPaletteId`
+     * / `customPalettes`.  Pass an empty array to fall back to
+     * the palette pipeline.
+     */
+    lineColors?: string[]
   }>(),
   { readonly: false, previewMode: false }
 )
@@ -53,6 +73,10 @@ const emit = defineEmits<{
    *  parent is expected to open the right-side note drawer
    *  scoped to the given node. */
   (e: 'edit-note', nodeId: string): void
+  /** Fired when `markdown` is in use and the underlying data
+   *  changes (user edit, import, etc).  The string is the
+   *  re-serialized markdown representation. */
+  (e: 'markdownChange', markdown: string): void
 }>()
 
 const wrapperRef = ref<HTMLElement | null>(null)
@@ -61,6 +85,52 @@ const editText = ref('')
 const selectedId = ref<string | null>(null)
 const collapsedIds = ref<Set<string>>(new Set())
 const dataRef = ref<MindMapNode>(clone(props.data))
+// `usingMarkdown` is true when the current dataRef was derived from
+// the `markdown` prop.  Used by the change-watcher below to decide
+// whether to emit `markdownChange` after a user edit.
+const usingMarkdown = ref(props.markdown !== undefined)
+// Set when the watcher on props.markdown writes into dataRef, so the
+// dataRef watcher can ignore that write-back and not emit a
+// markdownChange loop.
+let suppressMarkdownEmit = false
+
+watch(
+  () => props.markdown,
+  (md) => {
+    if (md === undefined) {
+      usingMarkdown.value = false
+      return
+    }
+    usingMarkdown.value = true
+    // Parse and replace the data tree, but mark the change as
+    // "internal" so the dataRef watcher doesn't echo it back as
+    // markdownChange.
+    const parsed = markdownToMindMap(md || '')
+    suppressMarkdownEmit = true
+    dataRef.value = clone(parsed)
+    selectedId.value = null
+    collapsedIds.value = new Set()
+    triggerRef()
+    nextTick(() => {
+      suppressMarkdownEmit = false
+      resetView()
+    })
+  },
+)
+
+// After any data-mutating path (addChild, removeNode, edit, import,
+// paste, …), the `change` emit is fired.  When the user is in
+// markdown mode we also fire `markdownChange` with the re-serialized
+// form so the host can keep its source in sync.
+watch(
+  dataRef,
+  () => {
+    if (usingMarkdown.value && !suppressMarkdownEmit) {
+      emit('markdownChange', mindMapToMarkdown(dataRef.value))
+    }
+  },
+  { deep: true },
+)
 // Debug overlay: sibling-order badge on every node, gated behind
 // the showOrderBadge setting (default off — toggled in the
 // settings panel).  When on, each rendered node shows a small
@@ -696,9 +766,16 @@ const activePalette = computed<BranchPalette>(() =>
 const branchColor = computed<Map<string, string>>(() => {
   const m = new Map<string, string>()
   if (!settings.rainbowBranch) return m
-  const colors = activePalette.value.colors.length > 0
-    ? activePalette.value.colors
-    : RAINBOW_FALLBACK
+  // lineColors prop wins over the palette pipeline: if the host
+  // hands us an explicit list, use it verbatim (modulo the
+  // wrap-around).  An empty / undefined list falls back to the
+  // palette lookup.
+  const explicit = props.lineColors
+  const colors = (explicit && explicit.length > 0)
+    ? explicit
+    : activePalette.value.colors.length > 0
+      ? activePalette.value.colors
+      : RAINBOW_FALLBACK
   for (let i = 0; i < lrRootChildren.value.length; i++) {
     const c = lrRootChildren.value[i]
     m.set(c.id, colors[i % colors.length])
@@ -811,7 +888,7 @@ useKeyboard({
 const layoutResult = computed(() => {
   const data = clone(dataRef.value)
   applyCollapse(data)
-  return layout(data, { mode: settings.layoutMode })
+  return layout(data, { mode: settings.layoutMode, baseFontSize: theme.value.fontSize })
 })
 
 // Walk the layout in one pass, building both the flat node list and the lookup map
@@ -1312,11 +1389,37 @@ defineExpose<MindMapExpose>({
     selectedId.value = null
     collapsedIds.value = new Set()
     triggerRef()
+    // Record the new data as the undoable baseline so the first edit
+    // after a setData can still be undone.
+    record()
     nextTick(() => resetView())
   },
   resetView: () => resetView(),
   exportData,
   importData,
+  /** Serialize the current data tree as markdown.  Always available
+   *  — the same serializer is used to emit `markdownChange`. */
+  getMarkdown: () => mindMapToMarkdown(dataRef.value),
+  /** Replace the data tree with the result of parsing `md`.  The
+   *  flag `emitMarkdownChange` (default true) controls whether the
+   *  change is also echoed via `markdownChange` (use false when
+   *  the host just set the same value back from the prop). */
+  setMarkdown: (md: string, emitMarkdownChange: boolean = true) => {
+    const parsed = markdownToMindMap(md || '')
+    if (emitMarkdownChange) usingMarkdown.value = true
+    suppressMarkdownEmit = !emitMarkdownChange
+    history.reset()
+    dataRef.value = clone(parsed)
+    selectedId.value = null
+    collapsedIds.value = new Set()
+    triggerRef()
+    record()
+    nextTick(() => {
+      suppressMarkdownEmit = false
+      resetView()
+    })
+    emit('change', dataRef.value)
+  },
   // Make balanced the active layout (sticky).  Subsequent data changes
   // and additions stay in balanced mode.  Pass `false` to revert to the
   // default compact layout.
@@ -1383,6 +1486,11 @@ watch(
 )
 
 onMounted(() => {
+  // Record the initial state so the first user action is undoable.
+  // Without this, history starts at cursor=-1 and the user can't
+  // undo their very first edit (cursor would jump from -1 → 0, and
+  // canUndo() requires cursor > 0).
+  record()
   nextTick(() => resetView())
 })
 

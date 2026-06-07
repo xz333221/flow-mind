@@ -1,6 +1,6 @@
 {
-  "name": "flow-mind",
-  "version": "0.1.0",
+  "name": "flow-mindmap",
+  "version": "0.1.1-beta.1",
   "description": "A modern, minimalist mind mapping tool — xmind-style, embeddable as a Vue component.",
   "type": "module",
   "license": "Apache-2.0",
@@ -10,10 +10,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xuze/flow-mind.git"
+    "url": "git+https://github.com/xz333221/flow-mindmap.git"
   },
   "bugs": {
-    "url": "https://github.com/xuze/flow-mind/issues"
+    "url": "https://github.com/xz333221/flow-mindmap/issues"
   },
   "keywords": [
     "mindmap",
@@ -31,20 +31,22 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "./dist/flow-mind.umd.cjs",
-  "module": "./dist/flow-mind.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/flow-mindmap.umd.cjs",
+  "module": "./dist/flow-mindmap.js",
+  "types": "./dist/entry.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/flow-mind.js",
-      "require": "./dist/flow-mind.umd.cjs"
+      "types": "./dist/entry.d.ts",
+      "import": "./dist/flow-mindmap.js",
+      "require": "./dist/flow-mindmap.umd.cjs"
     },
     "./style.css": "./dist/style.css"
   },
   "scripts": {
     "dev": "vite --port 7851 --strictPort",
-    "build": "vue-tsc --noEmit && vite build",
+    "build:types": "vue-tsc -p tsconfig.build.json",
+    "build:lib": "vite build --mode lib",
+    "build": "pnpm build:types && pnpm build:lib",
     "preview": "vite preview --port 7852",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . --ext .vue,.ts,.js --max-warnings 0",

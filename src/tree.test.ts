@@ -342,11 +342,11 @@ describe('markdownToMindMap — inline fields', () => {
 
   it('parses [label](url) on the line right after a heading as link, with label as text', () => {
     const md = `## Repo
-[GitHub 仓库](https://github.com/xuze/flow-mind)
+[GitHub 仓库](https://github.com/xz333221/flow-mindmap)
 ## Next`
     const r = markdownToMindMap(md)
     expect(r.children[0].text).toBe('GitHub 仓库')
-    expect(r.children[0].link).toEqual({ url: 'https://github.com/xuze/flow-mind' })
+    expect(r.children[0].link).toEqual({ url: 'https://github.com/xz333221/flow-mindmap' })
     expect(r.children[1].link).toBeUndefined()
   })
 

@@ -1,5 +1,5 @@
-// Compare node positions between demo/1.html (with flow-mind's 3-child data)
-// and the running flow-mind dev server. Captures screenshots and prints a
+// Compare node positions between demo/1.html (with flow-mindmap's 3-child data)
+// and the running flow-mindmap dev server. Captures screenshots and prints a
 // per-node center (x, y) table from each side.
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
@@ -44,16 +44,16 @@ console.log('===== Part 1: demo/1-test.html =====')
   await page.close()
 }
 
-// ====== Part 2: flow-mind dev server ======
-console.log('\n===== Part 2: flow-mind dev server (http://localhost:7851) =====')
+// ====== Part 2: flow-mindmap dev server ======
+console.log('\n===== Part 2: flow-mindmap dev server (http://localhost:7851) =====')
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto('http://localhost:7851/', { waitUntil: 'networkidle' })
   await page.waitForSelector('.zm-node', { timeout: 8000 })
   await page.waitForTimeout(1000) // post-init settle
-  await page.screenshot({ path: `${outDir}/flowmind-3children.png`, fullPage: false })
+  await page.screenshot({ path: `${outDir}/flowMindmap-3children.png`, fullPage: false })
 
-  // flow-mind sets `left/top` to the corner (subtracts width/2 / height/2),
+  // flow-mindmap sets `left/top` to the corner (subtracts width/2 / height/2),
   // and centers with a different mechanism. The bounding-box center is
   // the safe value to compare against.
   const positions = await page.evaluate(() => {
@@ -61,7 +61,7 @@ console.log('\n===== Part 2: flow-mind dev server (http://localhost:7851) ====='
       const r = el.getBoundingClientRect()
       const text = el.querySelector('.zm-text')?.textContent?.trim() ?? ''
       // Compose a comparable CSS class string: root => "root-node",
-      // otherwise flowmind uses "zm-node" + a depth-aware level via the
+      // otherwise flow-mindmap uses "zm-node" + a depth-aware level via the
       // computed branch color.  We expose: class + data-node-id.
       const className = el.className
       return {

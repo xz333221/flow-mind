@@ -1,11 +1,11 @@
 ---
 name: verify-and-commit
-description: Run after every code change to flow-mind. Verifies type check + library build + browser smoke test, then auto-commits on success. Use when the user edits source files and wants a safe commit.
+description: Run after every code change to flow-mindmap. Verifies type check + library build + browser smoke test, then auto-commits on success. Use when the user edits source files and wants a safe commit.
 ---
 
 # verify-and-commit
 
-Run this skill after any code change to flow-mind. It will:
+Run this skill after any code change to flow-mindmap. It will:
 
 1. **Type check** — `pnpm typecheck` (vue-tsc). Must be 0 errors.
 2. **Library build** — `pnpm build --mode lib`. Must produce `dist/` cleanly.
