@@ -13,6 +13,7 @@ import {
   duplicateNode,
   countDescendants,
   markdownToMindMap,
+  mindMapToMarkdown,
   DEFAULT_NEW_NODE_TEXT,
 } from './tree'
 import type { MindMapNode } from './types'
@@ -320,5 +321,90 @@ describe('markdownToMindMap', () => {
     const r = markdownToMindMap('just some plain text', 'Fallback')
     expect(r.text).toBe('Fallback')
     expect(r.children).toEqual([])
+  })
+})
+
+describe('markdownToMindMap — inline fields', () => {
+  it('parses ![](url) on the line right after a heading as image', () => {
+    const md = `## Cover
+![banner](https://example.com/banner.png)
+## Sibling`
+    const r = markdownToMindMap(md)
+    expect(r.children[0].text).toBe('Cover')
+    expect(r.children[0].image).toBeDefined()
+    expect(r.children[0].image!.src).toBe('https://example.com/banner.png')
+    // Default size: 160×120 (4:3 fallback when no explicit dims).
+    expect(r.children[0].image!.width).toBe(160)
+    expect(r.children[0].image!.height).toBe(120)
+    // Sibling should NOT inherit the image.
+    expect(r.children[1].image).toBeUndefined()
+  })
+
+  it('parses [label](url) on the line right after a heading as link, with label as text', () => {
+    const md = `## Repo
+[GitHub 仓库](https://github.com/xuze/z-mind)
+## Next`
+    const r = markdownToMindMap(md)
+    expect(r.children[0].text).toBe('GitHub 仓库')
+    expect(r.children[0].link).toEqual({ url: 'https://github.com/xuze/z-mind' })
+    expect(r.children[1].link).toBeUndefined()
+  })
+
+  it('parses a ```note … ``` fence right after a heading as note', () => {
+    const md = `## Overview
+\`\`\`note
+hello
+world
+\`\`\`
+## Sibling`
+    const r = markdownToMindMap(md)
+    expect(r.children[0].text).toBe('Overview')
+    expect(r.children[0].note).toBeDefined()
+    expect(r.children[0].note!.text).toBe('hello\nworld')
+    expect(r.children[1].note).toBeUndefined()
+  })
+
+  it('attaches image / link / note to the heading immediately above', () => {
+    // Mix of all three, in the "natural" order a user would type.
+    const md = `## Card
+A short body line.
+![pic](https://example.com/p.png)
+[Docs](https://example.com/docs)
+\`\`\`note
+notes about this card
+\`\`\`
+## Next`
+    const r = markdownToMindMap(md)
+    const card = r.children[0]
+    expect(card.text).toBe('Docs') // link label overrides the heading text
+    expect(card.image?.src).toBe('https://example.com/p.png')
+    expect(card.link?.url).toBe('https://example.com/docs')
+    expect(card.note?.text).toBe('notes about this card')
+    // The body line is a separate child of Card.
+    expect(card.children.some((c) => c.text === 'A short body line.')).toBe(true)
+  })
+})
+
+describe('mindMapToMarkdown — round-trip', () => {
+  it('preserves image / link / note through a markdown export + re-parse', () => {
+    const original: MindMapNode = {
+      id: 'root',
+      text: 'My Node',
+      children: [],
+      image: { src: 'https://example.com/p.png', naturalW: 200, naturalH: 150, width: 200, height: 150 },
+      link: { url: 'https://example.com' },
+      note: { text: 'line 1\nline 2' },
+    }
+    const md = mindMapToMarkdown(original)
+    // Quick visual sanity: the output should contain all three syntaxes.
+    expect(md).toContain('![image](https://example.com/p.png)')
+    expect(md).toContain('[My Node](https://example.com)')
+    expect(md).toContain('```note\nline 1\nline 2\n```')
+    // Re-parse and confirm everything is back.
+    const reparsed = markdownToMindMap(md)
+    expect(reparsed.text).toBe('My Node')
+    expect(reparsed.image?.src).toBe('https://example.com/p.png')
+    expect(reparsed.link?.url).toBe('https://example.com')
+    expect(reparsed.note?.text).toBe('line 1\nline 2')
   })
 })

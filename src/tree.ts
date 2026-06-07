@@ -1,4 +1,4 @@
-import type { MindMapNode } from './types'
+import type { MindMapNode, MindMapImage } from './types'
 
 export function uid(): string {
   return 'n_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
@@ -229,6 +229,12 @@ export const DEFAULT_NEW_NODE_TEXT = '新节点'
  *     of the preceding heading (so a `# Topic\n- detail` tree
  *     gives one root node with one child).
  *
+ * Inline fields parsed from a heading's body (in order, attached
+ * to the heading that precedes them):
+ *   - `![alt](url)`            → image
+ *   - `[label](url)`           → link (label becomes the node's text)
+ *   - ` ```note ... ``` `      → note (the fence body becomes note.text)
+ *
  * Empty input, or input with no `#` heading, returns a single
  * root with the fallback text.
  */
@@ -248,21 +254,121 @@ export function markdownToMindMap(md: string, rootText: string = '导入的导�
   // attached to the most recent heading as its first child —
   // a simple `Topic` then `- detail` becomes a one-level deep
   // tree, which mirrors how users actually think about their notes.
-  interface Pending { level: number; text: string; body: string }
+  interface Pending {
+    level: number
+    text: string
+    body: string
+    image?: MindMapImage
+    link?: { url: string }
+    note?: { text: string }
+  }
   const pending: Pending[] = []
   const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/
+  // Markdown image / link: ![alt](url) / [label](url).  Title
+  // attribute is optional: `![alt](url "title")`.  We don't need
+  // the alt text — only the URL — so the capture group is just
+  // the URL inside the parens.
+  const IMAGE_RE = /^!\[([^\]]*)\]\((\S+?)(?:\s+"[^"]*")?\)\s*$/
+  const LINK_RE = /^\[([^\]]+)\]\((\S+?)(?:\s+"[^"]*")?\)\s*$/
+  // Fence opener / closer for a special ```note … ``` block.
+  // We treat it like a normal markdown fence: must be at column
+  // 0 and consist of three-or-more backticks; we only recognise
+  // it when the info string is exactly "note".
+  const FENCE_RE = /^(`{3,}|~{3,})\s*(\S+)?\s*$/
+  // State for an in-flight note fence.
+  let inNoteFence = false
+  let noteBuffer: string[] = []
+  // The pending heading we're currently attaching fields to.  All
+  // `image` / `link` / `note` lines between two headings attach
+  // here.  Null when we haven't seen a heading yet.
+  let attachTo: Pending | null = null
+
+  function consumeNoteFenceLine(raw: string) {
+    // Append this line to the active note's text.  Empty line is
+    // preserved as a blank; surrounding blank lines are trimmed
+    // by the consumer (see `note.text` finalisation below).
+    noteBuffer.push(raw)
+  }
+
+  function closeNoteFence() {
+    if (attachTo && noteBuffer.length > 0) {
+      // Strip leading/trailing blank lines so the note doesn't
+      // start with a "\n" when the user just typed a one-liner.
+      while (noteBuffer.length > 0 && noteBuffer[0].trim() === '') noteBuffer.shift()
+      while (noteBuffer.length > 0 && noteBuffer[noteBuffer.length - 1].trim() === '') noteBuffer.pop()
+      const text = noteBuffer.join('\n')
+      if (text) attachTo.note = { text }
+    }
+    inNoteFence = false
+    noteBuffer = []
+  }
 
   for (const raw of lines) {
+    // Inside a note fence: every line goes into the buffer until
+    // we see a matching closer.
+    if (inNoteFence) {
+      const m = raw.match(FENCE_RE)
+      if (m && m[1][0] === '`') {
+        closeNoteFence()
+        continue
+      }
+      consumeNoteFenceLine(raw)
+      continue
+    }
+
     const m = raw.match(HEADING_RE)
     if (m) {
       const level = m[1].length
       const text = m[2].trim()
       pending.push({ level, text, body: '' })
-    } else if (raw.trim().length > 0 && pending.length > 0) {
-      const top = pending[pending.length - 1]
-      top.body = top.body ? top.body + ' ' + raw.trim() : raw.trim()
+      attachTo = pending[pending.length - 1]
+      continue
+    }
+
+    // Not a heading.  See if this line opens a ```note fence.
+    const fence = raw.match(FENCE_RE)
+    if (fence && fence[2] === 'note') {
+      inNoteFence = true
+      noteBuffer = []
+      continue
+    }
+
+    // Image?  Link?  Both attach to the most recent heading.
+    const img = raw.match(IMAGE_RE)
+    if (img && attachTo) {
+      const src = img[2]
+      // No explicit size in this syntax — fall back to a
+      // 4:3 default box.  The renderer can re-probe natural
+      // dimensions on first paint; this is just a layout hint.
+      const width = 160
+      const height = 120
+      attachTo.image = { src, naturalW: width, naturalH: height, width, height }
+      continue
+    }
+    const link = raw.match(LINK_RE)
+    if (link && attachTo) {
+      // Markdown link's label becomes the node's text.  This
+      // matches what users expect — "the node *is* the link".
+      attachTo.link = { url: link[2] }
+      // Override text with the link label if the heading text
+      // looks like a placeholder heading (the line right under
+      // a heading is usually its body, but when it's a `[…](…)`
+      // the label IS the meaningful content).
+      attachTo.text = link[1]
+      continue
+    }
+
+    // Plain prose: append to the current heading's body, which
+    // is rendered as the heading's first child node (see
+    // `pushNode`).
+    if (raw.trim().length > 0 && attachTo) {
+      attachTo.body = attachTo.body ? attachTo.body + ' ' + raw.trim() : raw.trim()
     }
   }
+
+  // Close any unterminated note fence gracefully (e.g. user
+  // deleted the closing ``` in the editor).
+  if (inNoteFence) closeNoteFence()
 
   function pushNode(p: Pending) {
     // Pop the stack until the top has a level strictly LESS than
@@ -287,6 +393,9 @@ export function markdownToMindMap(md: string, rootText: string = '导入的导�
     const parent = stack[stack.length - 1]
     const headingText = p.text
     const node: MindMapNode = { id: uid(), text: headingText, children: [] }
+    if (p.image) node.image = { ...p.image }
+    if (p.link) node.link = { url: p.link.url }
+    if (p.note) node.note = { text: p.note.text }
     if (p.body && pendingHasNoChildren(p, pending, pending.indexOf(p))) {
       node.children.push({ id: uid(), text: p.body, children: [] })
     }
@@ -317,8 +426,39 @@ export function markdownToMindMap(md: string, rootText: string = '导入的导�
     if (first) {
       root.text = first.text
       root.id = first.id
+      // Carry the inline fields up to the promoted root, so a
+      // top-level `# Title` with an image still shows the image
+      // on the visible root node.
+      if (first.image) root.image = { ...first.image }
+      if (first.link) root.link = { url: first.link.url }
+      if (first.note) root.note = { text: first.note.text }
       root.children = first.children
     }
   }
   return root
+}
+
+/**
+ * Round-trip-safe Markdown export of a MindMapNode tree.  Each
+ * heading is emitted as `#…`, then any inline fields (link /
+ * image / note) in a fixed order so the same source produces
+ * byte-stable output across re-exports.
+ *
+ * The `note` field round-trips through a ` ```note ` fence so a
+ * user opening the export in any markdown editor sees a clearly
+ * labeled block.  The link is emitted as a standard `[label](url)`
+ * with the node's text as the label — this keeps the export
+ * human-readable and lets `markdownToMindMap` re-attach the
+ * link to the right heading.
+ */
+export function mindMapToMarkdown(n: MindMapNode, depth = 1): string {
+  let s = '#'.repeat(depth) + ' ' + (n.text || '') + '\n'
+  // Link first so the `[label](url)` line is immediately under
+  // the heading — easier to read, and the order matches how a
+  // user would type it.
+  if (n.link) s += `[${n.text || 'link'}](${n.link.url})\n`
+  if (n.image) s += `![image](${n.image.src})\n`
+  if (n.note) s += '```note\n' + n.note.text + '\n```\n'
+  for (const c of n.children) s += mindMapToMarkdown(c, depth + 1)
+  return s
 }

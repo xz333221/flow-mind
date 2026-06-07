@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick } from 'vue'
 import type { MindMapNode } from '../types'
-import { markdownToMindMap, clone } from '../tree'
+import { markdownToMindMap, mindMapToMarkdown, clone } from '../tree'
 import MindMap from './MindMap.vue'
 
 const props = defineProps<{
@@ -16,16 +16,6 @@ const emit = defineEmits<{
    *  current data tree. */
   (e: 'import', data: MindMapNode): void
 }>()
-
-/** Convert a MindMapNode tree to a markdown string.  The root becomes
- *  the `#` heading, each child becomes one extra `#` deeper, and
- *  the walk is depth-first.  Empty children lists omit the heading
- *  entirely (you can't have a heading without body anyway). */
-function mindMapToMarkdown(n: MindMapNode, depth = 1): string {
-  const heading = '#'.repeat(depth) + ' ' + (n.text || '') + '\n'
-  const body = n.children.map((c) => mindMapToMarkdown(c, depth + 1)).join('')
-  return heading + body
-}
 
 const mdText = ref(mindMapToMarkdown(props.data))
 const parseError = ref<string | null>(null)
@@ -120,16 +110,51 @@ function exportToFile() {
   URL.revokeObjectURL(url)
 }
 
-/** Template for an empty editor — gives the user a starting point. */
-const STARTER = `# 中心主题
+/** Template for an empty editor — gives the user a starting point.
+ *  Showcases every feature: image (banner at the top), link (the
+ *  GitHub pointer on the root), note (the "what's this" block on
+ *  项目概览), and a moderately wide tree so the preview isn't
+ *  just one path.  Image URLs use placehold.co so the demo works
+ *  anywhere without bundling assets. */
+const STARTER = `# z-mind 思维导图
 
-## 一级分支
-- 在这里描述细节
-- 多个细节行会聚合成第一个子节点
+[GitHub 仓库](https://github.com/xuze/z-mind)
 
-## 另一个一级分支
-### 二级子分支
-### 另一个二级子分支
+![cover](https://placehold.co/600x300/3b82f6/ffffff?text=z-mind+demo)
+
+## 项目概览
+一个现代、极简的思维导图工具 — xmind 风格，可作为 Vue 组件嵌入。
+
+\`\`\`note
+这个 note 节点演示了多行笔记：
+- 节点旁的笔记图标
+- hover 显示 tooltip 预览
+- 点击图标进入内联编辑
+- 支持任意多行文本
+\`\`\`
+
+## 核心功能
+
+### 节点编辑
+- 增、删、改
+- 拖拽布局
+
+### 视图
+- 缩放与平移
+- 多种布局模式
+
+### 数据
+- 导入 / 导出 JSON
+- 撤销 / 重做
+
+## 技术栈
+- Vue 3 + Vite
+- TypeScript
+- 纯 SVG 渲染
+- 零第三方运行时依赖
+
+## 开源协议
+[Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0)
 `
 
 function loadStarter() {
