@@ -346,3 +346,32 @@ describe('layout', () => {
     }
   })
 })
+
+describe('preservePositions', () => {
+  it('keeps LayoutNode.x / LayoutNode.y from the data tree when preservePositions=true', () => {
+    // Pre-set _x / _y on the data tree (simulating a drag commit).
+    const data: MindMapNode = {
+      id: 'r', text: 'R', _x: 0, _y: 0,
+      children: [{ id: 'a', text: 'A', _x: 100, _y: 200, children: [] }],
+    }
+    const r = layout(data, { preservePositions: true })
+    // Root's _x / _y is overwritten with 0 (forced).  A's is kept.
+    expect(r.root.children[0].x).toBe(100)
+    expect(r.root.children[0].y).toBe(200)
+  })
+
+  it('overwrites LayoutNode.x / LayoutNode.y when preservePositions=false (default)', () => {
+    // Same fixture, but without preservePositions: A's _x / _y
+    // should be ignored and the layout should compute fresh
+    // coordinates from root (0, 0).
+    const data: MindMapNode = {
+      id: 'r', text: 'R',
+      children: [{ id: 'a', text: 'A', _x: 100, _y: 200, children: [] }],
+    }
+    const r = layout(data)
+    // The leaf ends up at the root's right edge (root x = 0,
+    // root half-width ≈ 50, hGap 60, leaf half-width ≈ 35 →
+    // leaf.x ≈ 0 + 50 + 60 + 35 = 145).  Importantly, NOT 100.
+    expect(r.root.children[0].x).not.toBe(100)
+  })
+})

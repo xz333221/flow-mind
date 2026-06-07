@@ -3,6 +3,17 @@ export interface MindMapNode {
   text: string
   children: MindMapNode[]
   collapsed?: boolean
+  /**
+   * Reserved for the layout algorithm — do not set or read from
+   * your own code.  After a drag, MindMap writes the dragged
+   * node's offset into the data tree so a subsequent layout with
+   * `preservePositions: true` can keep the node where the user
+   * put it.  Cleared on the next data-mutating action (add,
+   * remove, edit, import) so unrelated re-layouts don't keep
+   * stale overrides around.
+   */
+  _x?: number
+  _y?: number
 }
 
 export interface MindMapOptions {

@@ -141,6 +141,19 @@ export interface LayoutOptions {
   mode?: LayoutMode
   /** @deprecated kept for API compat; ignored in 1.html-style layout. */
   balanced?: boolean
+  /**
+   * When true, layout() leaves each LayoutNode's existing x/y in
+   * place — it still does the doLayout split / redirect / stack
+   * walk, but skips writing to child.x / child.y.  Used after a
+   * drag: we commit the offset into the data tree, clear the
+   * per-node offset map, then re-run layout with this flag so
+   * the dragged node (and its subtree) stay where the user put
+   * them.  The root is still forced to (0, 0) — to put the
+   * dragged node at a new position, the surrounding tree moves
+   * relative to it.  New nodes added later get the algorithmic
+   * position since their LayoutNode has x = 0, y = 0.
+   */
+  preservePositions?: boolean
 }
 
 export function layout(
@@ -156,19 +169,20 @@ export function layout(
   vbH: number
 } {
   const mode: LayoutMode = options.mode ?? 'mindmap'
+  const preservePositions = options.preservePositions === true
   const lr = buildLayout(root, 0, null, 1, 'right')
 
   // 1.html interleaves calcSubtreeH with doLayout.  We split into two
   // passes: extents first (post-order, so leaves are computed before
   // their parents), then doLayout.  Functionally equivalent.
   computeSubtreeExtents(lr)
-  applyDoLayout(lr, mode)
+  applyDoLayout(lr, mode, preservePositions)
 
   // Place root at (0, 0) per 1.html convention.
   lr.x = 0
   lr.y = 0
 
-  return computeBounds(lr)
+  return computeBounds(lr, preservePositions)
 }
 
 // =====================================================================
@@ -185,7 +199,7 @@ export function layout(
 // the old stackAt(0)-from-top code path — single-child parents end
 // up with their child at the same y as the parent.
 // =====================================================================
-function applyDoLayout(root: LayoutNode, mode: LayoutMode): void {
+function applyDoLayout(root: LayoutNode, mode: LayoutMode, preservePositions: boolean = false): void {
   if (mode === 'mindmap') {
     // Split root's children so that the *sum of subtree heights* on
     // each side is as close to half of the total as possible, while
@@ -267,11 +281,11 @@ function applyDoLayout(root: LayoutNode, mode: LayoutMode): void {
     // implicitly via its doLayout arms.
     if (rightKids.length > 0) {
       const rightParent: LayoutNode = { ...root, children: rightKids }
-      layoutHorizontal(rightParent, 'right', H_GAP, true)
+      layoutHorizontal(rightParent, 'right', H_GAP, true, preservePositions)
     }
     if (leftKids.length > 0) {
       const leftParent: LayoutNode = { ...root, children: leftKids }
-      layoutHorizontal(leftParent, 'left', H_GAP, true)
+      layoutHorizontal(leftParent, 'left', H_GAP, true, preservePositions)
     }
   } else if (mode === 'tree') {
     // Force every node in the tree to the right side.  The layout's
@@ -286,12 +300,12 @@ function applyDoLayout(root: LayoutNode, mode: LayoutMode): void {
       for (const c of n.children) forceRight(c)
     }
     for (const c of root.children) c._dir = 'right'
-    layoutHorizontal(root, 'right', H_GAP, true)
+    layoutHorizontal(root, 'right', H_GAP, true, preservePositions)
     forceRight(root)
   } else {
     // 'org' — all children fan downward
     for (const c of root.children) c._dir = 'down'
-    layoutVertical(root, H_GAP)
+    layoutVertical(root, H_GAP, preservePositions)
   }
 }
 
@@ -321,7 +335,8 @@ function layoutHorizontal(
   node: LayoutNode,
   dir: 'right' | 'left',
   hGap: number,
-  applyClockwise: boolean
+  applyClockwise: boolean,
+  preserve: boolean = false
 ): void {
   if (node.children.length === 0) return
   const totalH = node.children.reduce(
@@ -335,11 +350,17 @@ function layoutHorizontal(
   const step = applyClockwise ? sign : 1
   let cy = node.y - step * totalH / 2
   node.children.forEach((child) => {
-    child.x = node.x + sign * (node.width / 2 + hGap + child.width / 2)
-    child.y = cy + step * child._subtreeH / 2
+    // When preserve=true, keep the LayoutNode's existing x/y
+    // (the user just dragged this subtree to a new spot).  We
+    // still set _dir so the line anchor / side / ribbon
+    // orientation follow the new split.
+    if (!preserve) {
+      child.x = node.x + sign * (node.width / 2 + hGap + child.width / 2)
+      child.y = cy + step * child._subtreeH / 2
+    }
     child._dir = dir
     cy += step * (child._subtreeH + V_GAP)
-    layoutHorizontal(child, dir, hGap, false)
+    layoutHorizontal(child, dir, hGap, false, preserve)
   })
 }
 
@@ -347,7 +368,7 @@ function layoutHorizontal(
 // layoutVertical — 1.html JS L413-424.  Mirrored horizontally.
 // Children stack horizontally; the row is centered on the parent's x.
 // =====================================================================
-function layoutVertical(node: LayoutNode, vGap: number): void {
+function layoutVertical(node: LayoutNode, vGap: number, preserve: boolean = false): void {
   if (node.children.length === 0) return
   const totalW = node.children.reduce(
     (s, c, i) => s + c._subtreeW + (i > 0 ? V_GAP * 2 : 0),
@@ -355,11 +376,13 @@ function layoutVertical(node: LayoutNode, vGap: number): void {
   )
   let cx = node.x - totalW / 2
   node.children.forEach((child) => {
-    child.x = cx + child._subtreeW / 2
-    child.y = node.y + node.height / 2 + vGap + child.height / 2
+    if (!preserve) {
+      child.x = cx + child._subtreeW / 2
+      child.y = node.y + node.height / 2 + vGap + child.height / 2
+    }
     child._dir = 'down'
     cx += child._subtreeW + V_GAP * 2
-    layoutVertical(child, vGap)
+    layoutVertical(child, vGap, preserve)
   })
 }
 
@@ -381,8 +404,11 @@ function buildLayout(
     id: node.id,
     text: node.text,
     depth,
-    x: 0,
-    y: 0,
+    // Honor a user-set position from the data tree (drag commit).
+    // The next applyDoLayout pass will overwrite these unless
+    // preservePositions is true.
+    x: node._x ?? 0,
+    y: node._y ?? 0,
     width: size.w,
     height: size.h,
     fontSize: fontAt(depth),
@@ -457,7 +483,7 @@ function computeSubtreeExtents(root: LayoutNode): void {
 // which is at y=0, has room for its top half above the viewBox
 // origin).  x is NOT shifted — the viewBox starts at minX - padding.
 // =====================================================================
-function computeBounds(lr: LayoutNode): {
+function computeBounds(lr: LayoutNode, preservePositions: boolean = false): {
   root: LayoutNode
   width: number
   height: number
@@ -480,6 +506,23 @@ function computeBounds(lr: LayoutNode): {
     if (cur.y - halfH < minY) minY = cur.y - halfH
     if (cur.y + halfH > maxY) maxY = cur.y + halfH
     stack.push(...cur.children)
+  }
+  if (preservePositions) {
+    // User has just dragged nodes to specific spots.  Skip the
+    // SIDE_PADDING yShift that centers the tree in its bbox —
+    // the user's coordinates are the source of truth and
+    // shouldn't be displaced.  The viewBox will cover the
+    // existing coordinates plus half the widest node as left/
+    // right padding (see below).
+    return {
+      root: lr,
+      width: maxX - minX + SIDE_PADDING * 2,
+      height: maxY - minY + SIDE_PADDING * 2,
+      vbX: minX - SIDE_PADDING,
+      vbY: minY - SIDE_PADDING,
+      vbW: maxX - minX + SIDE_PADDING * 2,
+      vbH: maxY - minY + SIDE_PADDING * 2,
+    }
   }
   const yShift = SIDE_PADDING - minY
   const s2: LayoutNode[] = [lr]

@@ -81,6 +81,15 @@ const layoutVersion = ref(0)
 // unless the caller opts in via setBalanced(true).
 const balanced = ref(false)
 
+/** When true, the next layoutResult computed passes
+ *  `preservePositions: true` to the layout algorithm, so doLayout
+ *  keeps each LayoutNode's existing n.x / n.y instead of re-running
+ *  the doLayout step.  Set by the drag-completion path right
+ *  before triggering re-layout.  Reset to false by every other
+ *  mutation (add child / edit text / etc.) so those code paths
+ *  re-run the algorithm and place new / changed nodes. */
+const preserveOnNextLayout = ref(false)
+
 /** Undo/redo stack.  Every mutation calls `record()` AFTER applying the
  *  change; undo() / redo() then swap dataRef with a previous snapshot. */
 const history = useHistory(100)
@@ -111,18 +120,19 @@ function applyData(next: MindMapNode, opts: { resetCollapsed?: boolean; resetSel
 function triggerRef() {
   collapsedIds.value = new Set(collapsedIds.value)
   layoutVersion.value++
-  // If the user opted in to "auto-balance on change", snap to balanced
-  // layout after every mutation.  Same recipe as runBalance() — clear
-  // manual drag offsets, re-run layout, and re-center the view so the
-  // user actually sees the new arrangement (otherwise the new layout
-  // sits off-screen until they pan/zoom to find it).
+  // layoutResult now decides for itself whether to preservePositions
+  // (see `preserveOnNextLayout`).  The drag-completion callback
+  // sets that flag before calling us, so we don't need to do
+  // anything special here — just bump the version.  In the
+  // `else` branch of layoutResult we still call nodeDrag.resetOffsets()
+  // for the non-drag code paths (addChild / edit / setNodeText /
+  // collapse-toggle / etc.) so stale offsets don't linger.
   if (settings.autoBalanceOnChange && !props.readonly) {
     nextTick(() => {
-      nodeDrag.resetOffsets()
       balanced.value = true
-      // Re-run the layout computed (the offsets are gone now and
-      // `balanced` is set, so the next tick of layoutResult is the
-      // fresh balanced layout).  Then re-center the view on it.
+      // Re-run the layout computed (the `preserve` flag is already
+      // set in the drag case, false otherwise).  Then re-center
+      // the view on it.
       nextTick(() => resetView())
     })
   }
@@ -407,17 +417,28 @@ const nodeDrag = useNodeDrag({
   getNodeById: (id) => nodesById.value.get(id),
   collectDescendants,
   onChange: () => {
-    // Drag commits a per-node offset (not a data tree change).  Push
-    // the new state (data + offsets) onto the history stack so
-    // Ctrl+Z can pull the dragged node back.  useNodeDrag.getOffsets
-    // returns the committed offset map AFTER the drag end.
+    // Drag commits the offset permanently into the data tree's
+    // `_x` / `_y` and re-runs the layout with
+    // `preservePositions: true`, so the dragged subtree stays
+    // where the user put it.  The commit + layout pass runs in
+    // the next layoutResult computed tick (it reads
+    // `preserveOnNextLayout` and acts on it).
+    //
+    // record() is called BEFORE the commit so undo restores the
+    // pre-drag snapshot.
     record()
-    // Also re-trigger the layout computed.  When autoBalanceOnChange
-    // is on, this re-runs runBalance() (resetOffsets + balanced=true)
-    // — which is what the user expects after dropping a node:
-    // the dragged position is taken as the new starting point and
-    // the rest of the tree re-balances around it.
+    preserveOnNextLayout.value = true
     triggerRef()
+    // autoBalance path: re-center the view after the new layout
+    // settles so the user sees the dragged result.  We drive
+    // autoBalance here directly (rather than relying on
+    // triggerRef's autoBalance branch) because the layout pass
+    // must read preserveOnNextLayout BEFORE we clear it — the
+    // autoBalance branch in triggerRef would re-run layout
+    // without the flag and undo our commit.
+    if (settings.autoBalanceOnChange && !props.readonly) {
+      nextTick(() => nextTick(() => resetView()))
+    }
   },
 })
 
@@ -452,11 +473,53 @@ useKeyboard({
 
 // layout
 const layoutResult = computed(() => {
+  // The drag-completion path sets `preserveOnNextLayout = true` to
+  // tell the layout algorithm to keep n.x / n.y instead of recomputing
+  // them.  We also need to commit the per-node drag offsets into
+  // the data tree BEFORE cloning, so the preserved n.x / n.y
+  // includes the dragged position.  Once committed, clear the
+  // offset map so subsequent moves don't double-count.
+  const preserve = preserveOnNextLayout.value
+  if (preserve) {
+    commitDragOffsetsToData()
+  } else {
+    // Always clear offsets on a non-preserved re-run: the data
+    // tree changed, so any leftover offsets are now misleading.
+    nodeDrag.resetOffsets()
+  }
+  preserveOnNextLayout.value = false
   const data = clone(dataRef.value)
   applyCollapse(data)
-  const r = layout(data, { mode: settings.layoutMode })
+  const r = layout(data, {
+    mode: settings.layoutMode,
+    preservePositions: preserve,
+  })
   return r
 })
+
+/** Walk the per-node drag offsets and stamp them into the data
+ *  tree as `_x` / `_y` so the next layout pass (with
+ *  `preservePositions: true`) keeps the node at the dragged
+ *  spot.  Also walks the descendants so an entire subtree moves
+ *  together (preserves the "drag with me" relationship).  Clears
+ *  the offset map afterwards. */
+function commitDragOffsetsToData() {
+  const root = dataRef.value
+  const offsets = nodeDrag.getOffsets()
+  const apply = (n: MindMapNode, dx: number, dy: number) => {
+    n._x = (n._x ?? 0) + dx
+    n._y = (n._y ?? 0) + dy
+    for (const c of n.children) apply(c, dx, dy)
+  }
+  for (const id in offsets) {
+    const o = offsets[id]
+    if (!o || (o.x === 0 && o.y === 0)) continue
+    const n = findNode(root, id)
+    if (!n) continue
+    apply(n, o.x, o.y)
+  }
+  nodeDrag.resetOffsets()
+}
 
 // Walk the layout in one pass, building both the flat node list and the lookup map
 watch(
