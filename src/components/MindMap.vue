@@ -1668,15 +1668,19 @@ onMounted(() => {
             draggable="false"
           />
           <!--
-            Rich body rendering is currently DISABLED so the
-            mindmap shows a pure tree — every paragraph / list
-            item / code / table becomes its own child node and
-            nothing is embedded in the parent box.  The parser
-            still produces `n.richContent` (so we can re-enable
-            a non-embedded rendering later) but the renderer
-            ignores it for now.
+            Rich body (code / table only): produced by hand-built
+            trees (the `#rich` sample in the demo) or by
+            `markdownToRichMindMap`.  Rendered as a small framed
+            block ABOVE the node title so the title stays
+            single-line and the SVG edge anchor (which keys
+            off the box centre) doesn't drift.  Only code and
+            table kinds render — paragraph / list kinds fall
+            through to the plain `text` label so the box
+            stays the same size as a regular node.
+            Pointer events are disabled on the body so clicks
+            fall through to the node (lets the user dblclick
+            to edit).
           -->
-          <!--
           <div
             v-if="n.richContent && (n.richContent.kind === 'code' || n.richContent.kind === 'table') && editingId !== n.id"
             class="zm-rich zm-rich-above"
@@ -1694,7 +1698,6 @@ onMounted(() => {
               </tbody>
             </table>
           </div>
-          -->
           <span v-if="editingId !== n.id" class="zm-text">
             <span class="zm-text-label">{{ n.text }}</span>
             <a
@@ -1929,6 +1932,11 @@ onMounted(() => {
 .zm-node {
   position: absolute;
   display: flex;
+  flex-direction: column;  /* Stack rich body (image / code / table) above title.
+                            * When there's no rich body the column only has the
+                            * title row, which is centered horizontally and
+                            * vertically (justify-content: center on the
+                            * cross axis). */
   align-items: center;
   justify-content: center;
   padding: 0 0.8em;
@@ -1993,11 +2001,10 @@ onMounted(() => {
 
 /* ── rich body ─────────────────────────────────────
  * Shows the markdown payload produced by
- * `markdownToRichMindMap` inside the node box, so a whole
- * document can be previewed as a mindmap without losing
- * its body content.  All four kinds are styled to fit
- * inside the small node frame (max-height + scroll for
- * code, capped width for prose).  Pointer events are
+ * `markdownToRichMindMap` (or hand-built data) inside the
+ * node box, above the title for code/table kinds so the
+ * single-line title stays visually centred and the SVG
+ * edge anchor doesn't drift.  Pointer events are
  * explicitly disabled via .zm-rich so the node stays
  * clickable for selection / dblclick-to-edit. */
 .zm-rich {
@@ -2005,15 +2012,21 @@ onMounted(() => {
   margin-top: 6px;
   width: 100%;
   max-width: 260px;
-  max-height: 160px;
+  max-height: 200px;
   overflow: auto;
   font-size: 0.78em;
   line-height: 1.35;
   text-align: left;
   background: rgba(0, 0, 0, 0.04);
   border-radius: 4px;
-  padding: 6px 8px;
+  padding: 4px 6px;
   color: inherit;
+}
+/* When the rich body sits above the title, drop the top
+ * margin (no need to separate from a thing that doesn't
+ * exist yet) and add a bottom gap before the title. */
+.zm-rich-above {
+  margin: 0 0 6px 0;
 }
 .zm-rich-code {
   margin: 0;

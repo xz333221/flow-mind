@@ -210,15 +210,40 @@ function calcNodeSize(node: MindMapNode, level: number, baseFontSize: number): {
     iconTrayW += ICON_GAP * iconCount
   }
   const textRowW = textWWithPad + iconTrayW
-  const minW = Math.round((NODE_MIN_W[t] * baseFontSize) / 14)
-  // Rich-body height reservation is currently disabled —
-  // markdownToRichMindMap produces one child node per block, so
-  // no rich body is rendered inside the box, and the box should
-  // stay the same size as a regular text node.  Keep the hook
-  // (richH, richGap) so re-enabling rich render later is a
-  // one-line change here.
-  const richH = 0
-  const richGap = 0
+  // When the node has a rich body, force the box to be wide enough
+  // to fit the body (max-width 260px) so the title doesn't get
+  // squeezed against the body or vice versa.  Without this floor
+  // a short title like "代码块" would produce a ~70px box and the
+  // 260px max-width rich body would have to either overflow or
+  // stretch the box past the layout's reserved width — either
+  // way the SVG edge anchor would land at a point that's not the
+  // visible centre.
+  const minW = (() => {
+    const base = Math.round((NODE_MIN_W[t] * baseFontSize) / 14)
+    if (
+      node.richContent &&
+      (node.richContent.kind === 'code' || node.richContent.kind === 'table')
+    ) {
+      return Math.max(base, 240)
+    }
+    return base
+  })()
+  // Reserve vertical room for the rich body that renders ABOVE
+  // the title — only code / table kinds, never paragraph / list.
+  //
+  // The reserved height matches the typical content plus the
+  // .zm-rich wrapper's 6px top/bottom padding.  A 3-row markdown
+  // table or a 3-line code block at the default 14px fontSize
+  // measures ~55-70px including padding, so 70px is enough head
+  // room without leaving a visible gap when the content is short.
+  // Max caps at 200px so a huge pasted code fence doesn't
+  // dominate the layout.
+  const hasAboveRich = !!(
+    node.richContent &&
+    (node.richContent.kind === 'code' || node.richContent.kind === 'table')
+  )
+  const richH = hasAboveRich ? Math.min(200, Math.max(70, Math.ceil(fontSize * 5))) : 0
+  const richGap = richH > 0 ? 8 : 0
   if (!node.image) {
     const w = Math.max(minW, textRowW)
     return { w, h: textH + richGap + richH }
