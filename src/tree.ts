@@ -358,11 +358,17 @@ export function markdownToMindMap(md: string, rootText: string = '导入的导�
       continue
     }
 
-    // Plain prose: append to the current heading's body, which
-    // is rendered as the heading's first child node (see
-    // `pushNode`).
+    // Plain prose: append to the current heading's body.  We
+    // keep raw line boundaries (joined with '\n') so multi-line
+    // bodies round-trip into ` ```note ` fences without losing
+    // paragraph breaks.  The body is later attached as the
+    // heading's `note` (see pushNode), not as a child node —
+    // children would create an extra click target the user
+    // didn't ask for; note is the right home for prose that
+    // belongs to a heading.
     if (raw.trim().length > 0 && attachTo) {
-      attachTo.body = attachTo.body ? attachTo.body + ' ' + raw.trim() : raw.trim()
+      const trimmed = raw.trim()
+      attachTo.body = attachTo.body ? attachTo.body + '\n' + trimmed : trimmed
     }
   }
 
@@ -396,23 +402,19 @@ export function markdownToMindMap(md: string, rootText: string = '导入的导�
     if (p.image) node.image = { ...p.image }
     if (p.link) node.link = { url: p.link.url }
     if (p.note) node.note = { text: p.note.text }
-    if (p.body && pendingHasNoChildren(p, pending, pending.indexOf(p))) {
-      node.children.push({ id: uid(), text: p.body, children: [] })
+    if (p.body) {
+      // Body prose becomes the heading's note, not a child
+      // node — the prose describes the heading rather than
+      // being a sibling topic.  mindMapToMarkdown round-trips
+      // note as a ```note fence, so this is lossless.  We
+      // always attach body (no children-guard needed), because
+      // a heading can have both sub-headings AND body prose
+      // (the prose belongs to the heading, not to its kids).
+      node.note = { text: p.body }
     }
     parent.children.push(node)
     stack.push(node)
     levelStack.push(p.level)
-  }
-
-  // Whether `p` has a subsequent heading at a deeper level.  If
-  // yes, the body line gets absorbed as a child of that sub-heading
-  // instead, so we don't double-render it.
-  function pendingHasNoChildren(p: Pending, all: Pending[], idx: number): boolean {
-    for (let i = idx + 1; i < all.length; i++) {
-      if (all[i].level <= p.level) return true
-      if (all[i].level > p.level) return false
-    }
-    return true
   }
 
   for (const p of pending) pushNode(p)
