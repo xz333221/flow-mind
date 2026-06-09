@@ -95,9 +95,39 @@ const richData: MindMapNode = {
       note: { text: '代码块以 richContent 形式携带,\n渲染在节点标题上方,自动支持语言 tag。' },
       link: { url: 'https://flow-mindmap.example/docs/api' },
       children: [
-        { id: 'r_code_a', text: '等宽字体,自动换行', children: [] },
-        { id: 'r_code_b', text: '保留原始 ```lang 标签', children: [] },
-        { id: 'r_code_c', text: 'max-height 截断,框内可滚', children: [] },
+        {
+          id: 'r_code_a',
+          text: '等宽字体,自动换行',
+          // 三级节点测试:JS 代码块
+          richContent: {
+            kind: 'code',
+            lang: 'js',
+            raw: '```js\nconst sum = (a, b) => a + b\nconsole.log(sum(1, 2)) // 3\n```',
+          },
+          children: [],
+        },
+        {
+          id: 'r_code_b',
+          text: '保留原始 ```lang 标签',
+          // 三级节点测试:不同语言 (bash) 代码块
+          richContent: {
+            kind: 'code',
+            lang: 'bash',
+            raw: '```bash\nnpm install flow-mindmap\nnpm run dev\n```',
+          },
+          children: [],
+        },
+        {
+          id: 'r_code_c',
+          text: 'max-height 截断,框内可滚',
+          // 三级节点测试:超长代码块验证滚动
+          richContent: {
+            kind: 'code',
+            lang: 'ts',
+            raw: '```ts\ninterface Node {\n  id: string\n  text: string\n  children: Node[]\n  collapsed?: boolean\n  image?: { src: string }\n  link?: { url: string }\n  note?: { text: string }\n  richContent?: RichContent\n}\nfunction walk(n: Node) {\n  console.log(n.id)\n  n.children.forEach(walk)\n}\n```',
+          },
+          children: [],
+        },
       ],
     },
     {
@@ -109,9 +139,36 @@ const richData: MindMapNode = {
         raw: '| 字段 | 类型 | 说明 |\n| --- | --- | --- |\n| id | string | 节点唯一 id |\n| text | string | 节点标题 |\n| children | MindMapNode[] | 子节点数组 |',
       },
       children: [
-        { id: 'r_table_a', text: '自动识别 markdown 表格', children: [] },
-        { id: 'r_table_b', text: '忽略对齐分隔行', children: [] },
-        { id: 'r_table_c', text: '保留所有行 / 所有列', children: [] },
+        {
+          id: 'r_table_a',
+          text: '自动识别 markdown 表格',
+          // 三级节点测试:小表格 (2 列 × 3 行)
+          richContent: {
+            kind: 'table',
+            raw: '| key | value |\n| --- | --- |\n| name | flow-mindmap |\n| version | 0.x |',
+          },
+          children: [],
+        },
+        {
+          id: 'r_table_b',
+          text: '忽略对齐分隔行',
+          // 三级节点测试:含对齐符 (:---, :---:, ---:) 的表格
+          richContent: {
+            kind: 'table',
+            raw: '| 左对齐 | 居中 | 右对齐 |\n| :--- | :---: | ---: |\n| L1 | C1 | R1 |\n| L2 | C2 | R2 |',
+          },
+          children: [],
+        },
+        {
+          id: 'r_table_c',
+          text: '保留所有行 / 所有列',
+          // 三级节点测试:多列宽表格
+          richContent: {
+            kind: 'table',
+            raw: '| a | b | c | d | e |\n| --- | --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 | 5 |\n| 6 | 7 | 8 | 9 | 10 |',
+          },
+          children: [],
+        },
       ],
     },
     {
