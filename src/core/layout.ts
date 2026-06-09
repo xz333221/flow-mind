@@ -62,6 +62,15 @@ export interface LayoutNode {
    *  only — the default behaviour, unchanged from before this
    *  field was introduced. */
   richContent?: RichContent
+  /** Inset (px) the SVG edge anchor should retreat from the
+   *  geometric box edge on the in-side, to land at the visible
+   *  content edge instead.  Set to `.zm-node` padding +
+   *  `.zm-rich` padding + 2 for code/table nodes (their visible
+   *  content sits well inside the box); 0 for plain nodes (the
+   *  geometric edge IS the visible edge).  Used by lineAnchor
+   *  in MindMap.vue — non-zero for nodes whose first child of
+   *  the line would otherwise appear to pierce the rich body. */
+  _richInsetX?: number
   children: LayoutNode[]
   parent: LayoutNode | null
 }
@@ -561,6 +570,20 @@ function buildLayout(
   richWidths?: Record<string, number>
 ): LayoutNode {
   const size = calcNodeSize(node, depth, baseFontSize, richHeights, richWidths)
+  // SVG line anchor inset for code/table nodes.  The visible content
+  // (the `.zm-rich` framed body) sits inside the box by:
+  //   - `.zm-node` horizontal padding  = `padPx(depth, baseFontSize)`
+  //   - `.zm-rich` horizontal padding  = 6 px (CSS `padding: 4px 6px`)
+  //   - small extra 2 px so the line tip lands just inside the
+  //     rich body, not on the inner padding boundary.
+  // For plain nodes (no richContent, or kind other than code/table)
+  // the geometric box edge IS the visible edge, so leave 0 and let
+  // the MindMap.vue lineAnchor keep its 2-px inset.
+  const isAboveRich = !!(
+    node.richContent &&
+    (node.richContent.kind === 'code' || node.richContent.kind === 'table')
+  )
+  const richInsetX = isAboveRich ? Math.round(padPx(depth, baseFontSize)) + 6 + 2 : 0
   const ln: LayoutNode = {
     id: node.id,
     text: node.text,
@@ -584,6 +607,9 @@ function buildLayout(
     link: node.link ? { url: node.link.url } : undefined,
     note: node.note ? { text: node.note.text } : undefined,
     richContent: node.richContent ? { kind: node.richContent.kind, raw: node.richContent.raw, lang: node.richContent.lang } : undefined,
+    // Only set on rich-content nodes; undefined lets the renderer
+    // fall back to its plain-node default inset.
+    ...(isAboveRich ? { _richInsetX: richInsetX } : {}),
     children: [],
     parent,
   }

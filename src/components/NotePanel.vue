@@ -27,6 +27,7 @@ import {
   tableRows,
   type SortDir,
 } from '../composables/useRichContent'
+import { renderMarkdown } from '../composables/useMarkdown'
 
 const props = defineProps<{
   /** The currently selected node.  `null` means nothing is
@@ -59,12 +60,20 @@ const emit = defineEmits<{
 }>()
 
 // ---------------------------------------------------------------------------
-// Note (the only always-editable field)
+// Note (the only always-editable field).  The textarea holds the
+// raw markdown; the preview pane below re-renders it via
+// `renderMarkdown` on every keystroke.  `showPreview` lets the
+// user collapse the preview to give the textarea more room.
 // ---------------------------------------------------------------------------
 const draft = ref('')
 const noteRef = ref<HTMLTextAreaElement | null>(null)
-useAutosize(noteRef, { minRows: 5, maxRows: 16 })
+useAutosize(noteRef, { minRows: 4, maxRows: 10 })
 const isEmpty = computed(() => !draft.value || draft.value.trim() === '')
+const noteHtml = computed(() => renderMarkdown(draft.value))
+const showPreview = ref(true)
+function togglePreview() {
+  showPreview.value = !showPreview.value
+}
 
 watch(
   () => [props.selectedNode?.id, props.selectedNode?.note?.text],
@@ -299,17 +308,35 @@ const summary = computed(() => {
           <header class="zm-note-section-head">
             <span class="zm-note-section-title">笔记</span>
             <span class="zm-note-section-hint">Ctrl+Enter 提交, Esc 取消</span>
+            <button
+              v-if="!readonly"
+              type="button"
+              class="zm-note-preview-toggle"
+              @click="togglePreview"
+            >{{ showPreview ? '隐藏预览' : '显示预览' }}</button>
           </header>
-          <textarea
-            ref="noteRef"
-            v-model="draft"
-            class="zm-note-textarea"
-            :placeholder="'写点什么吧…'"
-            spellcheck="false"
-            :disabled="readonly"
-            @blur="commitNote"
-            @keydown="onNoteKeydown"
-          />
+          <div class="zm-note-split">
+            <textarea
+              ref="noteRef"
+              v-model="draft"
+              class="zm-note-textarea"
+              :placeholder="'写点什么吧… 支持 Markdown'"
+              spellcheck="false"
+              :disabled="readonly"
+              @blur="commitNote"
+              @keydown="onNoteKeydown"
+            />
+            <div v-if="showPreview" class="zm-note-preview">
+              <div
+                v-if="!isEmpty"
+                class="zm-note-preview-body"
+                v-html="noteHtml"
+              ></div>
+              <div v-else class="zm-note-preview-hint">
+                渲染后的 Markdown 仅在此面板显示,不会撑大节点框。
+              </div>
+            </div>
+          </div>
           <div v-if="!readonly && !isEmpty" class="zm-note-section-actions">
             <button class="zm-note-action-btn is-danger" @click="onRemoveNote">移除笔记</button>
           </div>
@@ -600,6 +627,134 @@ const summary = computed(() => {
 .zm-note-textarea::placeholder {
   color: #94a3b8;
   white-space: pre-line;
+}
+
+.zm-note-split {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.zm-note-preview-toggle {
+  font: inherit;
+  font-size: 10px;
+  color: #1d4ed8;
+  background: transparent;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+  transition: all 0.1s;
+  flex-shrink: 0;
+}
+.zm-note-preview-toggle:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+.zm-note-preview {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1e293b;
+}
+.zm-note-preview-hint {
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: italic;
+}
+.zm-note-preview-body h1,
+.zm-note-preview-body h2,
+.zm-note-preview-body h3 {
+  margin: 8px 0 4px;
+  font-weight: 600;
+  color: #0f172a;
+}
+.zm-note-preview-body h1 { font-size: 16px; }
+.zm-note-preview-body h2 { font-size: 14px; }
+.zm-note-preview-body h3 { font-size: 13px; }
+.zm-note-preview-body h4,
+.zm-note-preview-body h5,
+.zm-note-preview-body h6 {
+  margin: 6px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+.zm-note-preview-body p { margin: 0 0 6px; }
+.zm-note-preview-body p:last-child { margin-bottom: 0; }
+.zm-note-preview-body ul,
+.zm-note-preview-body ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+.zm-note-preview-body li { margin: 0 0 2px; }
+.zm-note-preview-body blockquote {
+  margin: 0 0 6px;
+  padding: 4px 10px;
+  border-left: 3px solid #cbd5e1;
+  color: #475569;
+  background: #f1f5f9;
+}
+.zm-note-preview-body code {
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: #be185d;
+}
+.zm-note-preview-body pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: auto;
+}
+.zm-note-preview-body pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.zm-note-preview-body a {
+  color: #1d4ed8;
+  text-decoration: underline;
+  text-decoration-color: #bfdbfe;
+}
+.zm-note-preview-body a:hover {
+  text-decoration-color: #1d4ed8;
+}
+.zm-note-preview-body table {
+  border-collapse: collapse;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.zm-note-preview-body th,
+.zm-note-preview-body td {
+  border: 1px solid #e2e8f0;
+  padding: 4px 8px;
+  text-align: left;
+}
+.zm-note-preview-body th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+.zm-note-preview-body hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 8px 0;
+}
+.zm-note-preview-body img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 4px;
+  display: block;
 }
 
 .zm-note-input {

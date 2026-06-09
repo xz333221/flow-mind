@@ -1594,7 +1594,14 @@ function lineAnchor(
   // thick ribbon (especially at high zoom) can't visually
   // pierce the child rectangle — the ribbon's normal-width
   // lands cleanly inside the visible border.
-  const inset = side === 'in' ? 2 : 0
+  //
+  // For code/table nodes the box's *visible* content (the
+  // `.zm-rich` framed body) sits well inside the geometric
+  // box edge by `.zm-node` padding + `.zm-rich` padding.
+  // Layout stamps `_richInsetX` with that depth-aware total;
+  // falling back to 2 for plain nodes keeps the original
+  // "tip just inside the border" look.
+  const inset = side === 'in' ? (n._richInsetX ?? 2) : 0
   return { x: n.x + d * (n.width / 2 - inset), y: n.y }
 }
 

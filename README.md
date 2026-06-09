@@ -7,7 +7,7 @@ A modern, minimalist mind mapping tool — xmind-style, embeddable as a Vue 3 co
 - 键盘快捷键: `Tab` 添加子节点 / `Enter` 添加同级 / `F2` 编辑 / `Delete` 删除节点
 - 一键折叠/展开子树
 - 多种布局模式: mindmap(默认) / tree(右向树) / org(向下组织结构)
-- 可调画板: 渐变锥形连线、彩虹分支、节点背景/边框/字体样式、嵌入图片、超链接、节点笔记
+- 可调画板: 渐变锥形连线、彩虹分支、节点背景/边框/字体样式、嵌入图片、超链接、节点笔记(Markdown + 实时预览)
 - 撤销/重做、JSON 导入导出
 - 扁平化 SVG 线框图标,无任何 Emoji
 - Apache-2.0 开源协议,可在 npm 安装作为组件使用
