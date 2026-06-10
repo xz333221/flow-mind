@@ -128,11 +128,13 @@ defineProps<{
       <line x1="8" y1="11" x2="14" y2="11" />
       <line x1="16" y1="16" x2="21" y2="21" />
     </template>
-    <!-- reset: target -->
+    <!-- reset: 4 corner brackets pointing inward — "fit to view"
+         glyph: reads as "snap the canvas back into the frame". -->
     <template v-else-if="name === 'reset'">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="4" />
-      <circle cx="12" cy="12" r="0.8" fill="currentColor" />
+      <polyline points="4 9 4 4 9 4" />
+      <polyline points="15 4 20 4 20 9" />
+      <polyline points="20 15 20 20 15 20" />
+      <polyline points="9 20 4 20 4 15" />
     </template>
     <!-- mindmap logo: branched node -->
     <template v-else-if="name === 'logo'">
@@ -170,23 +172,31 @@ defineProps<{
       <polyline points="9 16 5 18 9 20" />
       <polyline points="15 16 19 18 15 20" />
     </template>
-    <!-- mindmap: center node with 4 short branches (1.html btnLayoutMindmap) -->
+    <!-- mindmap: central node with 4 diagonal branches to outer
+         nodes — classic radial / hub-and-spoke silhouette. -->
     <template v-else-if="name === 'mindmap'">
-      <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
-      <line x1="13" y1="11" x2="19" y2="6" />
-      <line x1="13" y1="13" x2="19" y2="18" />
-      <line x1="11" y1="11" x2="5" y2="6" />
-      <line x1="11" y1="13" x2="5" y2="18" />
+      <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none" />
+      <line x1="13.4" y1="10.6" x2="18.5" y2="5.5" />
+      <line x1="13.4" y1="13.4" x2="18.5" y2="18.5" />
+      <line x1="10.6" y1="10.6" x2="5.5" y2="5.5" />
+      <line x1="10.6" y1="13.4" x2="5.5" y2="18.5" />
+      <circle cx="19.5" cy="4.5" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="19.5" cy="19.5" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="4.5" r="1.8" fill="currentColor" stroke="none" />
+      <circle cx="4.5" cy="19.5" r="1.8" fill="currentColor" stroke="none" />
     </template>
-    <!-- tree: right-angled branches (1.html btnLayoutTree) -->
+    <!-- tree: root on the left, 3 children on the right, joined
+         with right-angled lines — clearly reads as "expand right". -->
     <template v-else-if="name === 'tree'">
-      <circle cx="6" cy="12" r="2" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="6" r="2" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="12" r="2" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="18" r="2" fill="currentColor" stroke="none" />
-      <line x1="8" y1="12" x2="16" y2="6" />
-      <line x1="8" y1="12" x2="16" y2="12" />
-      <line x1="8" y1="12" x2="16" y2="18" />
+      <circle cx="5" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="5" r="2" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="2" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="19" r="2" fill="currentColor" stroke="none" />
+      <line x1="7" y1="12" x2="12" y2="12" />
+      <line x1="12" y1="12" x2="12" y2="5" />
+      <line x1="12" y1="12" x2="12" y2="19" />
+      <line x1="12" y1="5" x2="17" y2="5" />
+      <line x1="12" y1="19" x2="17" y2="19" />
     </template>
     <!-- org: top-down hierarchy (1.html btnLayoutOrg) -->
     <template v-else-if="name === 'org'">

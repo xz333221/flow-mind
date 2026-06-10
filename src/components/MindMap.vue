@@ -1459,7 +1459,7 @@ function walkTreeDepth(visit: (n: MindMapNode, depth: number) => void) {
 function collapseAll() {
   collapsedIds.value = new Set()
   walkTreeDepth((n) => {
-    if (n.id !== dataRef.value.id && n.children.length > 0) {
+    if (n.children.length > 0) {
       collapsedIds.value.add(n.id)
     }
   })
@@ -2127,7 +2127,7 @@ onMounted(() => {
           >{{ siblingIndexOf(n.id) + 1 }}</span>
 
           <span
-            v-if="isCollapsed(n.id) && !n.isRoot && collapsedChildCount(n.id) > 0"
+            v-if="isCollapsed(n.id) && collapsedChildCount(n.id) > 0"
             class="zm-collapse-badge"
             :class="{ 'is-on-left': n.side === -1 }"
             :style="{ background: branchColor.get(n.id) ?? '#64748b' }"
@@ -2137,7 +2137,7 @@ onMounted(() => {
           >{{ collapsedChildCount(n.id) }}</span>
 
           <button
-            v-if="!n.isRoot && nodeHasChildren(n) && !isCollapsed(n.id)"
+            v-if="nodeHasChildren(n) && !isCollapsed(n.id)"
             class="zm-btn zm-collapse"
             :class="{ 'is-on-left': n.side === -1 }"
             :style="{ color: branchColor.get(n.id) ?? '#64748b', borderColor: branchColor.get(n.id) ?? '#64748b' }"
