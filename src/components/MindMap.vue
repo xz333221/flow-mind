@@ -90,6 +90,10 @@ const editingId = ref<string | null>(null)
 const editText = ref('')
 const selectedId = ref<string | null>(null)
 const collapsedIds = ref<Set<string>>(new Set())
+// True when the cursor is over the canvas.  In preview mode the
+// bottom toolbar fades in on hover; in non-preview mode this is
+// ignored (the toolbar stays put).
+const canvasHovered = ref(false)
 
 // In-place rich body edit: which node has its code/table flipped
 // into edit mode, and the live draft text.  Only one node can be
@@ -1434,6 +1438,52 @@ function toggleCollapse(id: string) {
   triggerRef()
 }
 
+/** Walk the data tree, calling `visit(node, depth)` for each node.
+ *  Depth of the root is 1.  Used by the bulk expand/collapse
+ *  toolbar buttons below. */
+function walkTreeDepth(visit: (n: MindMapNode, depth: number) => void) {
+  const stack: Array<{ n: MindMapNode; depth: number }> = [{ n: dataRef.value, depth: 1 }]
+  while (stack.length) {
+    const { n, depth } = stack.pop()!
+    visit(n, depth)
+    // Push children in reverse so the natural left-to-right order
+    // is preserved on a depth-first traversal.
+    for (let i = n.children.length - 1; i >= 0; i--) {
+      stack.push({ n: n.children[i], depth: depth + 1 })
+    }
+  }
+}
+
+/** Collapse every node that has children, leaving only the root
+ *  expanded.  Click again to peek at branches. */
+function collapseAll() {
+  collapsedIds.value = new Set()
+  walkTreeDepth((n) => {
+    if (n.id !== dataRef.value.id && n.children.length > 0) {
+      collapsedIds.value.add(n.id)
+    }
+  })
+  triggerRef()
+}
+
+/** Expand only the top-level (level-1) branches.  Every node at
+ *  depth >= 2 is collapsed.  Useful for the "鸟瞰" view. */
+function expandToLevel(maxDepth: number) {
+  collapsedIds.value = new Set()
+  walkTreeDepth((n, depth) => {
+    if (depth > maxDepth && n.children.length > 0) {
+      collapsedIds.value.add(n.id)
+    }
+  })
+  triggerRef()
+}
+
+/** Expand every node in the tree. */
+function expandAll() {
+  collapsedIds.value = new Set()
+  triggerRef()
+}
+
 /** External edit hook (used by the outline panel's inline edit).
  *  No-op if the text is unchanged or the id doesn't exist. */
 function doSetText(id: string, text: string) {
@@ -1860,6 +1910,8 @@ onMounted(() => {
       @mousedown="onCanvasMouseDown"
       @contextmenu.prevent
       @wheel="panZoom.onWheel"
+      @mouseenter="canvasHovered = true"
+      @mouseleave="canvasHovered = false"
       @click="onCanvasClick"
     >
       <!-- SVG layer: positioned in world coords (vbX, vbY) scaled by
@@ -2152,7 +2204,24 @@ onMounted(() => {
       />
     </div>
 
-    <div v-if="!props.previewMode" class="zm-toolbar">
+    <!-- Bottom toolbar.  Always rendered; the parent's previewMode
+         + canvasHovered refs drive visibility:
+           - non-preview: toolbar always visible
+           - preview:     toolbar fades in on canvas hover, fades
+                          out on leave.  Pointer-events follow
+                          opacity so the toolbar doesn't catch
+                          clicks while invisible.
+         Inside, the "secondary" group (add child/sibling, layout
+         mode, import) is non-preview-only — those buttons mutate
+         data, which preview mode disallows. -->
+    <div
+      class="zm-toolbar"
+      :class="{ 'is-preview-only': props.previewMode, 'is-hovered': canvasHovered }"
+    >
+      <!-- 缩放比例 + 放大 / 缩小 / 重置视图: always visible, also
+           show in preview mode (the canvas still needs to be
+           navigable in preview). -->
+      <span class="zm-tb-tip zm-tb-zoom">{{ Math.round(panZoom.scale.value * 100) }}%</span>
       <button class="zm-tb-btn" title="放大" @click="panZoom.zoomIn">
         <Icon name="zoom-in" />
       </button>
@@ -2163,59 +2232,81 @@ onMounted(() => {
         <Icon name="reset" />
       </button>
       <span class="zm-tb-divider" />
-      <button
-        class="zm-tb-btn"
-        title="添加子节点 (Tab)"
-        @click="selectedId && doAddChild(selectedId)"
-      >
-        <img :src="addSubNodeIcon" width="14" height="14" alt="添加子节点" draggable="false" />
+
+      <!-- Bulk expand/collapse: safe in preview mode (it's a view
+           operation, not an edit).  Visually they're the same in
+           both modes. -->
+      <button class="zm-tb-btn" title="全部收起" @click="collapseAll">
+        <Icon name="collapse" />
       </button>
-      <button
-        class="zm-tb-btn"
-        title="添加同级 (Enter)"
-        @click="selectedId && doAddSibling(selectedId)"
-      >
-        <img :src="addNodeIcon" width="14" height="14" alt="添加同级" draggable="false" />
+      <button class="zm-tb-btn" title="展开一级" @click="expandToLevel(1)">
+        <Icon name="expand" />
       </button>
-      <span class="zm-tb-divider" />
-      <!-- 1.html-style layout mode switcher.  Each button highlights
-           when its mode is active.  Clicking triggers a re-layout. -->
-      <button
-        class="zm-tb-btn"
-        :class="{ active: settings.layoutMode === 'mindmap' }"
-        title="思维导图布局 (中心辐射)"
-        @click="setLayoutMode('mindmap')"
-      >
-        <Icon name="mindmap" />
+      <button class="zm-tb-btn" title="展开二级" @click="expandToLevel(2)">
+        <Icon name="expand" />
       </button>
-      <button
-        class="zm-tb-btn"
-        :class="{ active: settings.layoutMode === 'tree' }"
-        title="树形布局 (向右展开)"
-        @click="setLayoutMode('tree')"
-      >
-        <Icon name="tree" />
-      </button>
-      <button
-        class="zm-tb-btn"
-        :class="{ active: settings.layoutMode === 'org' }"
-        title="组织结构布局 (向下展开)"
-        @click="setLayoutMode('org')"
-      >
-        <Icon name="org" />
+      <button class="zm-tb-btn" title="全部展开" @click="expandAll">
+        <Icon name="expand" />
       </button>
       <span class="zm-tb-divider" />
-      <button
-        class="zm-tb-btn"
-        title="导入 JSON"
-        @click="importFromFile"
-      >
-        <Icon name="import" />
-      </button>
+
+      <!-- 导出: safe in preview (just serializes the current data). -->
       <button class="zm-tb-btn" title="导出 JSON" @click="exportToFile">
         <Icon name="export" />
       </button>
-      <span class="zm-tb-tip">{{ Math.round(panZoom.scale.value * 100) }}%</span>
+
+      <!-- Non-preview-only: edit + layout + import.  These mutate
+           the data tree or settings, which preview mode disallows. -->
+      <template v-if="!props.previewMode">
+        <span class="zm-tb-divider" />
+        <button
+          class="zm-tb-btn"
+          title="添加子节点 (Tab)"
+          @click="selectedId && doAddChild(selectedId)"
+        >
+          <img :src="addSubNodeIcon" width="14" height="14" alt="添加子节点" draggable="false" />
+        </button>
+        <button
+          class="zm-tb-btn"
+          title="添加同级 (Enter)"
+          @click="selectedId && doAddSibling(selectedId)"
+        >
+          <img :src="addNodeIcon" width="14" height="14" alt="添加同级" draggable="false" />
+        </button>
+        <span class="zm-tb-divider" />
+        <button
+          class="zm-tb-btn"
+          :class="{ active: settings.layoutMode === 'mindmap' }"
+          title="思维导图布局 (中心辐射)"
+          @click="setLayoutMode('mindmap')"
+        >
+          <Icon name="mindmap" />
+        </button>
+        <button
+          class="zm-tb-btn"
+          :class="{ active: settings.layoutMode === 'tree' }"
+          title="树形布局 (向右展开)"
+          @click="setLayoutMode('tree')"
+        >
+          <Icon name="tree" />
+        </button>
+        <button
+          class="zm-tb-btn"
+          :class="{ active: settings.layoutMode === 'org' }"
+          title="组织结构布局 (向下展开)"
+          @click="setLayoutMode('org')"
+        >
+          <Icon name="org" />
+        </button>
+        <span class="zm-tb-divider" />
+        <button
+          class="zm-tb-btn"
+          title="导入 JSON"
+          @click="importFromFile"
+        >
+          <Icon name="import" />
+        </button>
+      </template>
     </div>
   </div>
 </template>
@@ -2742,6 +2833,21 @@ onMounted(() => {
   border-radius: 999px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   z-index: 10;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+/* In preview mode the toolbar is hidden by default and fades in
+   on canvas hover.  We also nudge it down a bit so the entrance
+   is a small slide, not a hard pop.  Pointer-events follow
+   opacity so the invisible toolbar never intercepts clicks. */
+.zm-toolbar.is-preview-only {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(8px);
+}
+.zm-toolbar.is-preview-only.is-hovered {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
 }
 .zm-tb-btn {
   width: 32px;

@@ -614,6 +614,7 @@ const totalNodes = computed(() => countNodes(data.value))
         <span class="zm-app-spacer" />
         <span class="zm-app-tip">{{ data.text || '未命名' }} · {{ totalNodes }} 节点</span>
         <button
+          v-if="false"
           class="zm-app-icon-btn"
           :class="{ 'is-on': richMode }"
           :title="richMode ? '切回默认示例 (3 分支)' : '切到节点能力一览 (图片/代码/表格/笔记/链接)'"
